@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ruby Test Discipline"
+  short_description: "Require tests with Ruby changes"
+  default_prompt: "Use $ruby-test-discipline when editing Ruby code so behavior changes are covered by tests."
