@@ -1,0 +1,39 @@
+<% content_for :title, "HobbyRepository Dashboard" %>
+
+<main class="dashboard-shell">
+  <section class="dashboard-hero">
+    <p class="eyebrow">Container app hosting platform</p>
+    <h1>HobbyRepository control plane</h1>
+    <p class="lede">
+      Rails is ready to become the app registry, dashboard, and wake coordinator
+      for small HTTP containers that can sleep when idle.
+    </p>
+  </section>
+
+  <section class="dashboard-grid" aria-label="Platform setup status">
+    <article>
+      <span class="status-dot"></span>
+      <h2>Rails app shell</h2>
+      <p>Generated with PostgreSQL, Hotwire, Puma, and Docker-first local setup.</p>
+    </article>
+    <article>
+      <span class="status-dot"></span>
+      <h2>Local services</h2>
+      <p>PostgreSQL and Redis run through Docker Compose with persistent volumes.</p>
+    </article>
+    <article>
+      <span class="status-dot"></span>
+      <h2>MVP path</h2>
+      <p>The next slice is app records, routes, deployments, nodes, and runtime events.</p>
+    </article>
+  </section>
+
+  <section class="milestone-panel" aria-label="Recommended MVP milestones">
+    <h2>Delivery order</h2>
+    <ol>
+      <% @milestones.each do |milestone| %>
+        <li><%= milestone %></li>
+      <% end %>
+    </ol>
+  </section>
+</main>

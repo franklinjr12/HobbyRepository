@@ -1,0 +1,56 @@
+# Omakase Ruby styling for Rails
+inherit_gem: { rubocop-rails-omakase: rubocop.yml }
+
+plugins:
+  - rubocop-performance
+  - rubocop-rails
+
+AllCops:
+  NewCops: enable
+  TargetRubyVersion: 3.3
+  SuggestExtensions: false
+  Exclude:
+    - "bin/bundle"
+    - "db/schema.rb"
+    - "log/**/*"
+    - "public/assets/**/*"
+    - "tmp/**/*"
+    - "vendor/**/*"
+
+Bundler/OrderedGems:
+  Enabled: true
+
+Layout/LineLength:
+  Max: 100
+  Exclude:
+    - "Gemfile"
+
+Lint/EmptyBlock:
+  Enabled: true
+
+Lint/MissingSuper:
+  Enabled: true
+
+Lint/SuppressedException:
+  Enabled: true
+
+Metrics/BlockLength:
+  Exclude:
+    - "config/environments/*.rb"
+    - "config/routes.rb"
+    - "config/ci.rb"
+
+Rails:
+  Enabled: true
+
+Rails/HasManyOrHasOneDependent:
+  Enabled: true
+
+Rails/I18nLocaleTexts:
+  Enabled: false
+
+Rails/SkipsModelValidations:
+  Enabled: true
+
+Security:
+  Enabled: true

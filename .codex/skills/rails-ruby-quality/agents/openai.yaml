@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rails Ruby Quality"
+  short_description: "Run Rails lint and security checks."
+  default_prompt: "Use this skill after editing Ruby or Rails files to run RuboCop, Zeitwerk, and Brakeman checks, then fix any reported issues."
