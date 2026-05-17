@@ -1,10 +1,41 @@
 require "test_helper"
 
 class AppsControllerTest < ActionDispatch::IntegrationTest
+  class FakeRuntimeAgent
+    def initialize(start_result: nil, stop_result: nil)
+      @start_result = start_result
+      @stop_result = stop_result
+    end
+
+    def start_app(app)
+      return @start_result if @start_result
+
+      app.manual_override_to!("waking", reason: "test runtime start")
+      app.record_event!("runtime.start_succeeded", "Container start requested")
+      RuntimeAgent::Result.success(command: "start_app")
+    end
+
+    def stop_app(app)
+      return @stop_result if @stop_result
+
+      app.manual_override_to!("stopped", reason: "test runtime stop")
+      app.record_event!("runtime.stop_succeeded", "Container stopped")
+      RuntimeAgent::Result.success(command: "stop_app")
+    end
+  end
+
   setup do
     @user = User.create!(email: "apps@example.com", password: "password123")
     Node.ensure_local!
     post sign_in_path, params: { email: @user.email, password: "password123" }
+  end
+
+  def with_runtime_agent(agent)
+    original = RuntimeAgent.method(:build)
+    RuntimeAgent.define_singleton_method(:build) { agent }
+    yield
+  ensure
+    RuntimeAgent.define_singleton_method(:build) { original.call }
   end
 
   test "creates app with default route, current deployment, and events" do
@@ -72,6 +103,7 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", text: "Configuration"
     assert_select "h2", text: "Runtime Instance"
     assert_select "h2", text: "Routes"
+    assert_select "form[action='#{inspect_runtime_app_path(app)}']"
     assert_select "pre", text: /boot failed/
     assert_select ".event-list strong", text: "health_check.failed"
   end
@@ -146,15 +178,31 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
   test "manual wake and sleep update state and record events" do
     app = @user.apps.create!(name: "Manual App", status: "sleeping")
 
-    post wake_app_path(app)
+    with_runtime_agent(FakeRuntimeAgent.new) do
+      post wake_app_path(app)
+    end
     assert_redirected_to app_path(app)
     assert_equal "waking", app.reload.status
-    assert_equal "wake.started", app.app_events.order(:created_at).last.event_type
+    assert_equal "runtime.start_succeeded", app.app_events.order(:created_at).last.event_type
 
-    post sleep_app_path(app)
+    with_runtime_agent(FakeRuntimeAgent.new) do
+      post sleep_app_path(app)
+    end
     assert_redirected_to app_path(app)
-    assert_equal "sleeping", app.reload.status
-    assert_equal "sleep.succeeded", app.app_events.order(:created_at).last.event_type
+    assert_equal "stopped", app.reload.status
+    assert_equal "runtime.stop_succeeded", app.app_events.order(:created_at).last.event_type
+  end
+
+  test "manual wake shows normalized runtime failures" do
+    app = @user.apps.create!(name: "Broken App", status: "sleeping")
+    error = RuntimeAgent::Error.new("start_failed", "Container start failed", [ "docker", "run" ], 1, "boom", {})
+
+    with_runtime_agent(FakeRuntimeAgent.new(start_result: RuntimeAgent::Result.failure(error))) do
+      post wake_app_path(app)
+    end
+
+    assert_redirected_to app_path(app)
+    assert_equal "Container start failed", flash[:alert]
   end
 
   test "does not show another user's app" do

@@ -1,0 +1,205 @@
+require "test_helper"
+
+module RuntimeAgent
+  class LocalDockerAgentTest < ActiveSupport::TestCase
+    class FakeRunner
+      attr_reader :commands
+
+      def initialize(responses)
+        @responses = responses
+        @commands = []
+      end
+
+      def call(command)
+        @commands << command
+        @responses.shift || success
+      end
+
+      def self.success(stdout = "")
+        DockerRunner::CommandResult.new(stdout, "", 0)
+      end
+
+      def self.failure(stderr = "failed", exit_status = 1)
+        DockerRunner::CommandResult.new("", stderr, exit_status)
+      end
+
+      private
+
+      def success
+        self.class.success
+      end
+    end
+
+    setup do
+      @node = Node.create!(name: "Local", hostname: "local.test", local: true)
+      @owner = User.create!(email: "agent@example.com", password: "password123")
+      @app = App.create!(
+        name: "Agent App",
+        slug: "agent-app",
+        owner: @owner,
+        node: @node,
+        image_reference: "example/agent:latest",
+        internal_port: 3000,
+        memory_limit_bytes: 134_217_728,
+        cpu_limit: 0.5,
+        status: "sleeping"
+      )
+      @deployment = @app.deployments.create!(
+        image_reference: "example/agent:latest",
+        port: 3000,
+        current: true
+      )
+      @app.environment_variables.create!(key: "RAILS_ENV", value: "production")
+    end
+
+    test "starts an app container through one normalized command boundary" do
+      runner = FakeRunner.new([
+        FakeRunner.success,
+        FakeRunner.success("container-123\n")
+      ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      assert_difference -> { @app.runtime_instances.count }, 1 do
+        result = agent.start_app(@app)
+
+        assert result.success?
+        assert_equal "container-123", result.payload.fetch(:container_id)
+      end
+
+      runtime_instance = @app.runtime_instances.order(:created_at).last
+      run_command = runner.commands.second
+
+      assert_equal "waking", @app.reload.status
+      assert_equal "starting", runtime_instance.status
+      assert_equal "container-123", runtime_instance.container_id
+      assert_includes run_command, "--expose"
+      assert_includes run_command, "3000"
+      assert_includes run_command, "--env"
+      assert_includes run_command, "RAILS_ENV=production"
+      assert_includes run_command, "--memory=134217728"
+      assert_includes run_command, "--cpus=0.5"
+      assert_includes run_command, "#{LABEL_APP_ID}=#{@app.id}"
+      assert_includes @app.app_events.pluck(:event_type), "runtime.start_succeeded"
+    end
+
+    test "normalizes start failures and records wake failure state" do
+      runner = FakeRunner.new([
+        FakeRunner.success,
+        FakeRunner.failure("port already allocated")
+      ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      result = agent.start_app(@app)
+
+      assert_not result.success?
+      assert_equal "start_failed", result.error.code
+      assert_equal "wake_failed", @app.reload.status
+      assert_equal "crashed", @app.runtime_instances.order(:created_at).last.status
+      assert_includes @app.app_events.pluck(:event_type), "runtime.start_failed"
+    end
+
+    test "stops a running app container and records the stopped instance" do
+      @app.manual_override_to!("running", reason: "test running container")
+      runtime_instance = @app.runtime_instances.create!(status: "running", container_id: "container-123")
+      runner = FakeRunner.new([ FakeRunner.success("container-123\n") ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      result = agent.stop_app(@app)
+
+      assert result.success?
+      assert_equal "stopped", @app.reload.status
+      assert_equal "stopped", runtime_instance.reload.status
+      assert runtime_instance.stopped_at.present?
+      assert_equal "docker", runner.commands.first.first
+      assert_includes @app.app_events.pluck(:event_type), "runtime.stop_succeeded"
+    end
+
+    test "forces a container kill only after graceful stop fails" do
+      @app.manual_override_to!("running", reason: "test running container")
+      @app.runtime_instances.create!(status: "running", container_id: "container-123")
+      runner = FakeRunner.new([
+        FakeRunner.failure("timeout"),
+        FakeRunner.success("container-123\n")
+      ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      result = agent.stop_app(@app)
+
+      assert result.success?
+      assert_equal true, result.payload.fetch(:forced)
+      assert_equal %w[docker kill container-123], runner.commands.second
+    end
+
+    test "inspect syncs running containers back to app state" do
+      @app.update!(status: "waking")
+      runtime_instance = @app.runtime_instances.create!(status: "starting", container_id: "container-123")
+      runner = FakeRunner.new([
+        FakeRunner.success([ { State: { Running: true, ExitCode: 0 } } ].to_json)
+      ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      result = agent.inspect_app(@app)
+
+      assert result.success?
+      assert_equal "running", @app.reload.status
+      assert_equal "running", runtime_instance.reload.status
+      assert_nil runtime_instance.stopped_at
+    end
+
+    test "inspect marks missing containers so apps are not falsely running" do
+      @app.manual_override_to!("running", reason: "test running container")
+      runtime_instance = @app.runtime_instances.create!(status: "running", container_id: "missing-123")
+      runner = FakeRunner.new([ FakeRunner.failure("No such object") ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      result = agent.inspect_app(@app)
+
+      assert_not result.success?
+      assert_equal "container_missing", result.error.code
+      assert_equal "crashed", @app.reload.status
+      assert_equal "missing", runtime_instance.reload.status
+      assert_includes @app.app_events.pluck(:event_type), "runtime.inspect_missing"
+    end
+
+    test "gets container logs through the normalized runtime interface" do
+      @app.runtime_instances.create!(status: "running", container_id: "container-123")
+      runner = FakeRunner.new([
+        DockerRunner::CommandResult.new("booted\n", "warned\n", 0)
+      ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      result = agent.get_logs(@app, lines: 50)
+
+      assert result.success?
+      assert_equal "booted\nwarned\n", result.payload.fetch(:logs)
+      assert_equal %w[docker logs --tail 50 container-123], runner.commands.first
+    end
+
+    test "cleanup removes only old stopped platform containers and records an event" do
+      platform_runtime = @app.runtime_instances.create!(
+        status: "stopped",
+        container_id: "platform-123",
+        stopped_at: 2.days.ago
+      )
+      other_runtime = @app.runtime_instances.create!(
+        status: "stopped",
+        container_id: "other-123",
+        stopped_at: 2.days.ago
+      )
+      runner = FakeRunner.new([
+        FakeRunner.success("true\n"),
+        FakeRunner.success("platform-123\n"),
+        FakeRunner.success("false\n")
+      ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      result = agent.cleanup_stopped_containers
+
+      assert result.success?
+      assert_equal [ "platform-123" ], result.payload.fetch(:removed_containers)
+      assert_includes @app.app_events.pluck(:event_type), "runtime.cleanup_removed"
+      assert_equal platform_runtime.id, @app.app_events.order(:created_at).last.metadata.fetch("runtime_instance_id")
+      assert_equal "other-123", other_runtime.reload.container_id
+    end
+  end
+end

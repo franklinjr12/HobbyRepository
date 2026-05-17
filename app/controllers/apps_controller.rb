@@ -1,5 +1,5 @@
 class AppsController < ApplicationController
-  before_action :set_app, only: %i[show edit update wake sleep]
+  before_action :set_app, only: %i[show edit update wake sleep inspect_runtime]
 
   def index
     @apps = current_user.apps.includes(:routes, :deployments, :runtime_instances).order(:name)
@@ -42,19 +42,28 @@ class AppsController < ApplicationController
   end
 
   def wake
-    @app.manual_override_to!("waking", reason: "manual dashboard wake")
-    @app.record_event!("wake.started", "Manual wake requested from dashboard", metadata: { requested_by: current_user.email })
+    result = runtime_agent.start_app(@app)
+    return redirect_to @app, notice: "Wake requested." if result.success?
 
-    redirect_to @app, notice: "Wake requested."
+    redirect_to @app, alert: result.error.message
   rescue ActiveRecord::RecordInvalid, ArgumentError => error
     redirect_to @app, alert: error.message
   end
 
   def sleep
-    @app.manual_override_to!("sleeping", reason: "manual dashboard sleep")
-    @app.record_event!("sleep.succeeded", "Manual sleep requested from dashboard", metadata: { requested_by: current_user.email })
+    result = runtime_agent.stop_app(@app)
+    return redirect_to @app, notice: "Stop requested." if result.success?
 
-    redirect_to @app, notice: "Sleep requested."
+    redirect_to @app, alert: result.error.message
+  rescue ActiveRecord::RecordInvalid, ArgumentError => error
+    redirect_to @app, alert: error.message
+  end
+
+  def inspect_runtime
+    result = runtime_agent.inspect_app(@app)
+    return redirect_to @app, notice: "Runtime inspected." if result.success?
+
+    redirect_to @app, alert: result.error.message
   rescue ActiveRecord::RecordInvalid, ArgumentError => error
     redirect_to @app, alert: error.message
   end
@@ -125,5 +134,9 @@ class AppsController < ApplicationController
     @runtime_instance = @app.runtime_instances.order(created_at: :desc).first
     @routes = @app.routes.order(active: :desc, hostname: :asc)
     @environment_variables = @app.environment_variables.ordered
+  end
+
+  def runtime_agent
+    RuntimeAgent.build
   end
 end

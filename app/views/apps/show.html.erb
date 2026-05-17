@@ -10,6 +10,7 @@
       <%= link_to "Settings", edit_app_path(@app), class: "button secondary" %>
       <%= button_to "Wake", wake_app_path(@app), method: :post, class: "button" %>
       <%= button_to "Sleep", sleep_app_path(@app), method: :post, class: "button secondary" %>
+      <%= button_to "Inspect", inspect_runtime_app_path(@app), method: :post, class: "button secondary" %>
       <%= link_to "All apps", apps_path, class: "button secondary" %>
     </div>
   </header>
