@@ -47,6 +47,7 @@ class App < ApplicationRecord
   has_many :deployments, dependent: :restrict_with_error
   has_many :routes, dependent: :restrict_with_error
   has_many :app_events, dependent: :destroy
+  has_many :environment_variables, dependent: :destroy
 
   before_validation :assign_local_node, on: :create
   before_validation :normalize_slug
@@ -117,6 +118,28 @@ class App < ApplicationRecord
 
   def record_event!(event_type, message, metadata: {})
     app_events.create!(event_type: event_type, message: message, metadata: metadata)
+  end
+
+  def runtime_environment
+    environment_variables.to_h(&:runtime_pair)
+  end
+
+  def runtime_environment_metadata
+    variables = environment_variables.ordered
+
+    {
+      variable_count: variables.size,
+      secret_count: variables.count(&:secret?),
+      keys: variables.map(&:key)
+    }
+  end
+
+  def record_runtime_environment_prepared!
+    record_event!(
+      "runtime.environment_prepared",
+      "Runtime environment prepared for #{name}",
+      metadata: runtime_environment_metadata
+    )
   end
 
   private

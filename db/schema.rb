@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_15_160800) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_17_193000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -62,6 +62,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_160800) do
     t.index ["app_id", "current"], name: "index_deployments_on_current_app", unique: true, where: "current"
     t.index ["app_id"], name: "index_deployments_on_app_id"
     t.index ["status"], name: "index_deployments_on_status"
+  end
+
+  create_table "environment_variables", force: :cascade do |t|
+    t.bigint "app_id", null: false
+    t.datetime "created_at", null: false
+    t.string "key", null: false
+    t.boolean "secret", default: false, null: false
+    t.datetime "updated_at", null: false
+    t.text "value", null: false
+    t.index ["app_id", "key"], name: "index_environment_variables_on_app_id_and_key", unique: true
+    t.index ["app_id"], name: "index_environment_variables_on_app_id"
   end
 
   create_table "nodes", force: :cascade do |t|
@@ -127,6 +138,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_160800) do
   add_foreign_key "apps", "nodes"
   add_foreign_key "apps", "users", column: "owner_id"
   add_foreign_key "deployments", "apps"
+  add_foreign_key "environment_variables", "apps"
   add_foreign_key "routes", "apps"
   add_foreign_key "runtime_instances", "apps"
   add_foreign_key "runtime_instances", "deployments"

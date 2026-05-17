@@ -417,6 +417,37 @@ dd {
   margin-top: 28px;
 }
 
+.settings-section .error-panel {
+  margin-top: 16px;
+}
+
+.env-form,
+.env-table {
+  margin-top: 18px;
+}
+
+.env-table details {
+  margin-bottom: 8px;
+}
+
+.env-inline-form {
+  max-width: 420px;
+  margin-top: 12px;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: #405066;
+  font-weight: 700;
+}
+
+.checkbox-row input {
+  width: 18px;
+  height: 18px;
+}
+
 .log-output {
   overflow-x: auto;
   margin: 0;

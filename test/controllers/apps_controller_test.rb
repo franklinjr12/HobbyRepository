@@ -76,6 +76,20 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".event-list strong", text: "health_check.failed"
   end
 
+  test "show masks secret environment variable values" do
+    app = @user.apps.create!(name: "Secret App", image_reference: "example/secret:latest", internal_port: 3000)
+    app.environment_variables.create!(key: "API_TOKEN", value: "super-secret", secret: true)
+    app.environment_variables.create!(key: "PUBLIC_MODE", value: "demo")
+
+    get app_path(app)
+
+    assert_response :success
+    assert_select "h2", text: "Environment Variables"
+    assert_select "code", text: "********"
+    assert_select "code", text: "demo"
+    assert_select "body", text: /super-secret/, count: 0
+  end
+
   test "settings update can create replacement deployment" do
     app = @user.apps.create!(
       name: "Editable App",

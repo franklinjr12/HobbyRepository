@@ -75,4 +75,32 @@ class AppTest < ActiveSupport::TestCase
 
     assert_equal "sleeping", app.status
   end
+
+  test "builds runtime environment payload without masking runtime secrets" do
+    app = App.create!(name: "Configured", slug: "configured", owner: @owner, node: @node)
+    app.environment_variables.create!(key: "DATABASE_URL", value: "postgres://example", secret: true)
+    app.environment_variables.create!(key: "RAILS_ENV", value: "production")
+
+    assert_equal(
+      {
+        "DATABASE_URL" => "postgres://example",
+        "RAILS_ENV" => "production"
+      },
+      app.runtime_environment
+    )
+  end
+
+  test "records runtime environment event metadata without values" do
+    app = App.create!(name: "Runtime Env", slug: "runtime-env", owner: @owner, node: @node)
+    app.environment_variables.create!(key: "API_TOKEN", value: "secret-token", secret: true)
+
+    app.record_runtime_environment_prepared!
+
+    event = app.app_events.order(:created_at).last
+    assert_equal "runtime.environment_prepared", event.event_type
+    assert_equal 1, event.metadata.fetch("variable_count")
+    assert_equal 1, event.metadata.fetch("secret_count")
+    assert_equal [ "API_TOKEN" ], event.metadata.fetch("keys")
+    assert_no_match "secret-token", event.metadata.to_json
+  end
 end

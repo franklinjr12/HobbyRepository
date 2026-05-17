@@ -9,10 +9,85 @@
     <%= link_to "Back to app", @app, class: "button secondary" %>
   </header>
 
-  <%= render "form", app: @app %>
+  <%= render "apps/form", app: @app %>
 
   <section class="settings-section">
     <h2>Environment Variables</h2>
-    <p>Environment variable editing is reserved for the secrets workflow in Epic 4.</p>
+
+    <% if defined?(@environment_variable) && @environment_variable.errors.any? %>
+      <div class="error-panel">
+        <h3><%= pluralize(@environment_variable.errors.count, "error") %> prevented this variable from being saved</h3>
+        <ul>
+          <% @environment_variable.errors.full_messages.each do |message| %>
+            <li><%= message %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
+    <%= form_with model: [@app, EnvironmentVariable.new], class: "stacked-form env-form" do |form| %>
+      <div class="form-row">
+        <div>
+          <%= form.label :key %>
+          <%= form.text_field :key, placeholder: "DATABASE_URL", required: true %>
+        </div>
+
+        <div>
+          <%= form.label :value %>
+          <%= form.text_field :value, autocomplete: "off", required: true %>
+        </div>
+      </div>
+
+      <label class="checkbox-row">
+        <%= form.check_box :secret %>
+        <span>Secret value</span>
+      </label>
+
+      <%= form.submit "Add variable" %>
+    <% end %>
+
+    <% if @environment_variables.any? %>
+      <table class="data-table env-table">
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Value</th>
+            <th>Secret</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @environment_variables.each do |environment_variable| %>
+            <tr>
+              <td><%= environment_variable.key %></td>
+              <td><code><%= environment_variable.display_value %></code></td>
+              <td><%= environment_variable.secret? ? "Yes" : "No" %></td>
+              <td>
+                <details>
+                  <summary class="button compact secondary">Edit</summary>
+                  <%= form_with model: [@app, environment_variable], class: "stacked-form env-inline-form" do |form| %>
+                    <div>
+                      <%= form.label :value, environment_variable.secret? ? "Replacement value" : "Value" %>
+                      <%= form.text_field :value, value: environment_variable.secret? ? nil : environment_variable.value, autocomplete: "off", required: true %>
+                    </div>
+
+                    <label class="checkbox-row">
+                      <%= form.check_box :secret %>
+                      <span>Secret value</span>
+                    </label>
+
+                    <%= form.submit "Save" %>
+                  <% end %>
+                </details>
+
+                <%= button_to "Delete", app_environment_variable_path(@app, environment_variable), method: :delete, class: "button compact secondary" %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% else %>
+      <p>No environment variables configured.</p>
+    <% end %>
   </section>
 </main>

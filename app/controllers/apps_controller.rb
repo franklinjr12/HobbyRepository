@@ -14,6 +14,7 @@ class AppsController < ApplicationController
   end
 
   def edit
+    @environment_variables = @app.environment_variables.ordered
   end
 
   def create
@@ -35,6 +36,7 @@ class AppsController < ApplicationController
       @app.record_event!("app.updated", "#{@app.name} settings were updated", metadata: changed_settings_metadata)
       redirect_to @app, notice: "App settings updated."
     else
+      @environment_variables = @app.environment_variables.ordered
       render :edit, status: :unprocessable_content
     end
   end
@@ -122,5 +124,6 @@ class AppsController < ApplicationController
     @events = @app.app_events.order(created_at: :desc).limit(20)
     @runtime_instance = @app.runtime_instances.order(created_at: :desc).first
     @routes = @app.routes.order(active: :desc, hostname: :asc)
+    @environment_variables = @app.environment_variables.ordered
   end
 end

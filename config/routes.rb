@@ -5,6 +5,8 @@ Rails.application.routes.draw do
   post "sign_in", to: "sessions#create"
   delete "sign_out", to: "sessions#destroy"
   resources :apps, only: %i[index new create show edit update] do
+    resources :environment_variables, only: %i[create update destroy]
+
     member do
       post :wake
       post :sleep
