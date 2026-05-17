@@ -41,12 +41,18 @@ class App < ApplicationRecord
 
   attr_accessor :manual_status_override_reason, :restoring_after_platform_restart
 
+  belongs_to :owner, class_name: "User", inverse_of: :apps
   belongs_to :node
   has_many :runtime_instances, dependent: :restrict_with_error
+  has_many :deployments, dependent: :restrict_with_error
+  has_many :routes, dependent: :restrict_with_error
+  has_many :app_events, dependent: :destroy
 
   before_validation :assign_local_node, on: :create
   before_validation :normalize_slug
   before_validation :assign_defaults
+  after_create :create_default_route
+  after_create :record_creation_event
 
   validates :name, :slug, :status, presence: true
   validates :slug, uniqueness: true,
@@ -101,6 +107,18 @@ class App < ApplicationRecord
     VALID_TRANSITIONS.fetch(from_status, []).include?(to_status)
   end
 
+  def current_deployment
+    deployments.find_by(current: true)
+  end
+
+  def default_route
+    routes.generated_subdomain.first || routes.first
+  end
+
+  def record_event!(event_type, message, metadata: {})
+    app_events.create!(event_type: event_type, message: message, metadata: metadata)
+  end
+
   private
 
   def assign_defaults
@@ -125,5 +143,25 @@ class App < ApplicationRecord
     return if self.class.valid_transition?(previous_status, next_status)
 
     errors.add(:status, "cannot transition from #{previous_status} to #{next_status}")
+  end
+
+  def create_default_route
+    routes.create!(
+      hostname: Route.generated_hostname_for(self),
+      route_type: "generated_subdomain",
+      active: true
+    )
+  end
+
+  def record_creation_event
+    record_event!(
+      "app.created",
+      "#{name} was created",
+      metadata: {
+        slug: slug,
+        status: status,
+        node_id: node_id
+      }
+    )
   end
 end

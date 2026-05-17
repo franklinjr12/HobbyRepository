@@ -14,17 +14,54 @@
     <article>
       <span class="status-dot"></span>
       <h2>Rails app shell</h2>
-      <p>Generated with PostgreSQL, Hotwire, Puma, and Docker-first local setup.</p>
+      <p>PostgreSQL, Hotwire, Puma, authentication, and Active Job are ready.</p>
     </article>
     <article>
       <span class="status-dot"></span>
-      <h2>Local services</h2>
-      <p>PostgreSQL and Redis run through Docker Compose with persistent volumes.</p>
+      <h2>Hosted apps</h2>
+      <p><%= pluralize(current_user.apps.count, "app") %> registered for <%= current_user.email %>.</p>
     </article>
     <article>
       <span class="status-dot"></span>
-      <h2>MVP path</h2>
-      <p>The next slice is app records, routes, deployments, nodes, and runtime events.</p>
+      <h2>Local node</h2>
+      <p><%= Node.ensure_local!.hostname %> is the single-node runtime target.</p>
+    </article>
+  </section>
+
+  <section class="detail-grid">
+    <article>
+      <div class="section-heading">
+        <h2>Recent Apps</h2>
+        <%= link_to "New app", new_app_path %>
+      </div>
+      <% if @apps.any? %>
+        <ol class="event-list">
+          <% @apps.each do |app| %>
+            <li>
+              <strong><%= link_to app.name, app %></strong>
+              <span><%= app.status %> · <%= app.default_route&.hostname %></span>
+            </li>
+          <% end %>
+        </ol>
+      <% else %>
+        <p>No apps have been created yet.</p>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Recent Events</h2>
+      <% if @recent_events.any? %>
+        <ol class="event-list">
+          <% @recent_events.each do |event| %>
+            <li>
+              <strong><%= event.event_type %></strong>
+              <span><%= event.message %></span>
+            </li>
+          <% end %>
+        </ol>
+      <% else %>
+        <p>No platform events yet.</p>
+      <% end %>
     </article>
   </section>
 

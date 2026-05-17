@@ -1,0 +1,53 @@
+<% content_for :title, "Apps" %>
+
+<main class="page-shell">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Hosted apps</p>
+      <h1>Apps</h1>
+    </div>
+    <%= link_to "New app", new_app_path, class: "button" %>
+  </header>
+
+  <% if @apps.any? %>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Status</th>
+          <th>Hostname</th>
+          <th>Deployment</th>
+          <th>Last activity</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @apps.each do |app| %>
+          <% hostname = app.default_route&.hostname %>
+          <tr>
+            <td><%= link_to app.name, app %></td>
+            <td><span class="status-pill status-<%= app.status %>"><%= app.status.humanize %></span></td>
+            <td>
+              <% if hostname.present? %>
+                <%= link_to hostname, "http://#{hostname}", target: "_blank", rel: "noopener" %>
+              <% else %>
+                Not routed
+              <% end %>
+            </td>
+            <td><%= app.current_deployment&.image_reference || "No deployment" %></td>
+            <td><%= app.last_activity_at ? time_ago_in_words(app.last_activity_at) + " ago" : "No traffic yet" %></td>
+            <td>
+              <div class="inline-actions">
+                <%= link_to "Open", app, class: "button secondary compact" %>
+                <%= button_to "Wake", wake_app_path(app), method: :post, class: "button compact" %>
+                <%= button_to "Sleep", sleep_app_path(app), method: :post, class: "button secondary compact" %>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% else %>
+    <p class="empty-state">No hosted apps yet.</p>
+  <% end %>
+</main>

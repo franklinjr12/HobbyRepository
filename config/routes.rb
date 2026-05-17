@@ -1,5 +1,15 @@
 Rails.application.routes.draw do
   root "dashboard#index"
+  get "dashboard", to: "dashboard#index", as: :dashboard
+  get "sign_in", to: "sessions#new"
+  post "sign_in", to: "sessions#create"
+  delete "sign_out", to: "sessions#destroy"
+  resources :apps, only: %i[index new create show edit update] do
+    member do
+      post :wake
+      post :sleep
+    end
+  end
 
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 

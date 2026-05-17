@@ -1,0 +1,141 @@
+<% content_for :title, @app.name %>
+
+<main class="page-shell">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow"><%= @app.slug %></p>
+      <h1><%= @app.name %></h1>
+    </div>
+    <div class="inline-actions">
+      <%= link_to "Settings", edit_app_path(@app), class: "button secondary" %>
+      <%= button_to "Wake", wake_app_path(@app), method: :post, class: "button" %>
+      <%= button_to "Sleep", sleep_app_path(@app), method: :post, class: "button secondary" %>
+      <%= link_to "All apps", apps_path, class: "button secondary" %>
+    </div>
+  </header>
+
+  <section class="dashboard-grid">
+    <article>
+      <span class="status-dot"></span>
+      <h2>Status</h2>
+      <p><span class="status-pill status-<%= @app.status %>"><%= @app.status.humanize %></span></p>
+    </article>
+    <article>
+      <span class="status-dot"></span>
+      <h2>Route</h2>
+      <% if @app.default_route&.hostname.present? %>
+        <p><%= link_to @app.default_route.hostname, "http://#{@app.default_route.hostname}", target: "_blank", rel: "noopener" %></p>
+      <% else %>
+        <p>Not routed</p>
+      <% end %>
+    </article>
+    <article>
+      <span class="status-dot"></span>
+      <h2>Runtime</h2>
+      <p><%= @runtime_instance&.status || "No runtime instance" %></p>
+    </article>
+  </section>
+
+  <section class="detail-grid">
+    <article>
+      <h2>Configuration</h2>
+      <dl>
+        <dt>Image</dt>
+        <dd><%= @app.image_reference.presence || "Not configured" %></dd>
+        <dt>Internal port</dt>
+        <dd><%= @app.internal_port.presence || "Not configured" %></dd>
+        <dt>Health check</dt>
+        <dd><%= @app.health_check_path %></dd>
+        <dt>Idle timeout</dt>
+        <dd><%= pluralize(@app.idle_timeout_seconds, "second") %></dd>
+        <dt>Startup timeout</dt>
+        <dd><%= pluralize(@app.startup_timeout_seconds, "second") %></dd>
+        <dt>Memory limit</dt>
+        <dd><%= @app.memory_limit_bytes.presence || "No limit configured" %></dd>
+        <dt>CPU limit</dt>
+        <dd><%= @app.cpu_limit.presence || "No limit configured" %></dd>
+      </dl>
+    </article>
+
+    <article>
+      <h2>Current Deployment</h2>
+      <% if @app.current_deployment %>
+        <dl>
+          <dt>Image</dt>
+          <dd><%= @app.current_deployment.image_reference %></dd>
+          <dt>Port</dt>
+          <dd><%= @app.current_deployment.port %></dd>
+          <dt>Health check</dt>
+          <dd><%= @app.current_deployment.health_check_path %></dd>
+        </dl>
+      <% else %>
+        <p>No deployment has been created.</p>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Routes</h2>
+      <% if @routes.any? %>
+        <dl>
+          <% @routes.each do |route| %>
+            <dt><%= route.route_type.humanize %></dt>
+            <dd>
+              <%= route.hostname %>
+              <span class="muted"><%= route.active? ? "active" : "inactive" %>, TLS <%= route.tls_status.humanize.downcase %></span>
+            </dd>
+          <% end %>
+        </dl>
+      <% else %>
+        <p>No routes have been configured.</p>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Runtime Instance</h2>
+      <% if @runtime_instance %>
+        <dl>
+          <dt>Status</dt>
+          <dd><%= @runtime_instance.status %></dd>
+          <dt>Container</dt>
+          <dd><%= @runtime_instance.container_id.presence || "Not assigned" %></dd>
+          <dt>Started</dt>
+          <dd><%= @runtime_instance.started_at || "Not started" %></dd>
+          <dt>Last seen</dt>
+          <dd><%= @runtime_instance.last_seen_at || "Never" %></dd>
+          <dt>Stopped</dt>
+          <dd><%= @runtime_instance.stopped_at || "Not stopped" %></dd>
+          <dt>Exit code</dt>
+          <dd><%= @runtime_instance.exit_code.nil? ? "None" : @runtime_instance.exit_code %></dd>
+        </dl>
+      <% else %>
+        <p>No runtime instance has been recorded.</p>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Latest Logs</h2>
+      <% if @runtime_instance&.failure_message.present? %>
+        <pre class="log-output"><%= @runtime_instance.failure_message %></pre>
+      <% else %>
+        <p>Runtime log capture has not recorded output for this app yet.</p>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Recent Events</h2>
+      <% if @events.any? %>
+        <ol class="event-list">
+          <% @events.each do |event| %>
+            <li>
+              <strong><%= event.event_type %></strong>
+              <span><%= event.message %></span>
+              <small><%= event.created_at.to_fs(:short) %></small>
+            </li>
+          <% end %>
+        </ol>
+      <% else %>
+        <p>No events yet.</p>
+      <% end %>
+    </article>
+  </section>
+</main>

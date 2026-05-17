@@ -1,0 +1,22 @@
+<% content_for :title, "Sign In" %>
+
+<main class="auth-shell">
+  <section class="auth-panel">
+    <p class="eyebrow">Control plane</p>
+    <h1>Sign in</h1>
+
+    <%= form_with url: sign_in_path, class: "stacked-form" do |form| %>
+      <div>
+        <%= form.label :email %>
+        <%= form.email_field :email, required: true, autofocus: true, autocomplete: "email" %>
+      </div>
+
+      <div>
+        <%= form.label :password %>
+        <%= form.password_field :password, required: true, autocomplete: "current-password" %>
+      </div>
+
+      <%= form.submit "Sign in" %>
+    <% end %>
+  </section>
+</main>

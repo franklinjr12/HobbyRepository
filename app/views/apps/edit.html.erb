@@ -1,0 +1,18 @@
+<% content_for :title, "#{@app.name} Settings" %>
+
+<main class="page-shell narrow">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow"><%= @app.slug %></p>
+      <h1>Settings</h1>
+    </div>
+    <%= link_to "Back to app", @app, class: "button secondary" %>
+  </header>
+
+  <%= render "form", app: @app %>
+
+  <section class="settings-section">
+    <h2>Environment Variables</h2>
+    <p>Environment variable editing is reserved for the secrets workflow in Epic 4.</p>
+  </section>
+</main>

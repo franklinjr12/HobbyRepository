@@ -1,0 +1,70 @@
+<% if app.errors.any? %>
+  <div class="error-panel">
+    <h2><%= pluralize(app.errors.count, "error") %> prevented this app from being saved</h2>
+    <ul>
+      <% app.errors.full_messages.each do |message| %>
+        <li><%= message %></li>
+      <% end %>
+    </ul>
+  </div>
+<% end %>
+
+<%= form_with model: app, class: "stacked-form" do |form| %>
+  <div>
+    <%= form.label :name %>
+    <%= form.text_field :name, required: true %>
+  </div>
+
+  <div>
+    <%= form.label :slug %>
+    <%= form.text_field :slug, placeholder: "generated from name" %>
+  </div>
+
+  <div>
+    <%= form.label :image_reference %>
+    <%= form.text_field :image_reference, placeholder: "ghcr.io/example/app:latest" %>
+  </div>
+
+  <div class="form-row">
+    <div>
+      <%= form.label :internal_port %>
+      <%= form.number_field :internal_port, min: 1, max: 65_535 %>
+    </div>
+
+    <div>
+      <%= form.label :idle_timeout_seconds %>
+      <%= form.number_field :idle_timeout_seconds, min: 60 %>
+    </div>
+  </div>
+
+  <div>
+    <%= form.label :health_check_path %>
+    <%= form.text_field :health_check_path, placeholder: "/" %>
+  </div>
+
+  <% if app.persisted? %>
+    <div class="warning-panel">
+      <strong>Runtime-impacting settings</strong>
+      <p>Changing the image, port, or health check creates a new current deployment. Running containers will use the new settings after the next runtime start.</p>
+    </div>
+
+    <div class="form-row">
+      <div>
+        <%= form.label :startup_timeout_seconds %>
+        <%= form.number_field :startup_timeout_seconds, min: 1 %>
+      </div>
+
+      <div>
+        <%= form.label :memory_limit_bytes %>
+        <%= form.number_field :memory_limit_bytes, min: 1, placeholder: "optional" %>
+      </div>
+    </div>
+
+    <div>
+      <%= form.label :cpu_limit %>
+      <%= form.number_field :cpu_limit, min: 0.01, step: 0.01, placeholder: "optional" %>
+    </div>
+  <% end %>
+
+  <%= form.submit app.persisted? ? "Save settings" : "Create app" %>
+<% end %>

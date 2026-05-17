@@ -9,3 +9,9 @@
 #   end
 
 Node.ensure_local!
+
+User.find_or_create_by!(email: ENV.fetch("SEED_USER_EMAIL", "admin@example.com")) do |user|
+  user.name = "Platform Admin"
+  user.password = ENV.fetch("SEED_USER_PASSWORD", "password123")
+  user.admin = true
+end
