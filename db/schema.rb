@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_17_193000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_17_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -29,7 +29,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_17_193000) do
   create_table "apps", force: :cascade do |t|
     t.decimal "cpu_limit", precision: 6, scale: 2
     t.datetime "created_at", null: false
-    t.string "health_check_path", default: "/", null: false
+    t.string "health_check_kind", default: "http", null: false
+    t.string "health_check_path", default: "/"
     t.integer "idle_timeout_seconds", default: 900, null: false
     t.string "image_reference"
     t.integer "internal_port"
@@ -54,7 +55,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_17_193000) do
     t.boolean "current", default: false, null: false
     t.datetime "deployed_at"
     t.jsonb "env_snapshot", default: {}, null: false
-    t.string "health_check_path", default: "/", null: false
+    t.string "health_check_kind", default: "http", null: false
+    t.string "health_check_path", default: "/"
     t.string "image_reference", null: false
     t.integer "port", null: false
     t.string "status", default: "created", null: false
@@ -111,6 +113,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_17_193000) do
     t.bigint "deployment_id"
     t.integer "exit_code"
     t.string "failure_message"
+    t.datetime "health_check_checked_at"
+    t.string "health_check_result"
+    t.integer "health_check_status_code"
     t.datetime "last_seen_at"
     t.bigint "node_id", null: false
     t.datetime "started_at"

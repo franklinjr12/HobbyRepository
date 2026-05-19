@@ -15,9 +15,38 @@ class AppTest < ActiveSupport::TestCase
     assert_equal "created", app.status
     assert_equal 900, app.idle_timeout_seconds
     assert_equal 60, app.startup_timeout_seconds
+    assert_equal "http", app.health_check_kind
     assert_equal "/", app.health_check_path
     assert_equal "tiny-site.localhost", app.default_route.hostname
     assert_equal [ "app.created" ], app.app_events.pluck(:event_type)
+  end
+
+  test "allows port readiness without a health check path" do
+    app = App.create!(
+      name: "Port Ready",
+      slug: "port-ready",
+      owner: @owner,
+      node: @node,
+      health_check_kind: "port",
+      health_check_path: nil
+    )
+
+    assert app.valid?
+    assert_nil app.health_check_path
+  end
+
+  test "requires http health checks to use an absolute path" do
+    app = App.new(
+      name: "Bad Health",
+      slug: "bad-health",
+      owner: @owner,
+      node: @node,
+      health_check_kind: "http",
+      health_check_path: "ready"
+    )
+
+    assert_not app.valid?
+    assert_includes app.errors[:health_check_path], "must start with /"
   end
 
   test "requires an owner" do

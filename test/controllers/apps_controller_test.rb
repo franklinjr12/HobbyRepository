@@ -48,6 +48,7 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
               image_reference: "example/tiny:latest",
               internal_port: 3000,
               idle_timeout_seconds: 900,
+              health_check_kind: "http",
               health_check_path: "/up"
             }
           }
@@ -59,6 +60,8 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to app_path(app)
     assert_equal "tiny-service.localhost", app.default_route.hostname
     assert_equal "example/tiny:latest", app.current_deployment.image_reference
+    assert_equal "http", app.current_deployment.health_check_kind
+    assert_equal "/up", app.current_deployment.health_check_path
     assert_equal %w[app.created deployment.created], app.app_events.order(:created_at).pluck(:event_type)
   end
 
@@ -102,6 +105,7 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h2", text: "Configuration"
     assert_select "h2", text: "Runtime Instance"
+    assert_select "dt", text: "Health check result"
     assert_select "h2", text: "Routes"
     assert_select "form[action='#{inspect_runtime_app_path(app)}']"
     assert_select "pre", text: /boot failed/
@@ -140,6 +144,7 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
           name: "Editable App",
           image_reference: "example/new:latest",
           internal_port: 4000,
+          health_check_kind: "port",
           health_check_path: "/ready",
           idle_timeout_seconds: 120,
           startup_timeout_seconds: 30,
@@ -153,7 +158,8 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to app_path(app)
     assert_equal "example/new:latest", app.current_deployment.image_reference
     assert_equal 4000, app.current_deployment.port
-    assert_equal "/ready", app.current_deployment.health_check_path
+    assert_equal "port", app.current_deployment.health_check_kind
+    assert_nil app.current_deployment.health_check_path
     assert_not original_deployment.reload.current?
     assert_includes app.app_events.order(:created_at).pluck(:event_type), "app.updated"
   end

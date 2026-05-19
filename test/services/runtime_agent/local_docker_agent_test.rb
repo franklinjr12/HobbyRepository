@@ -30,6 +30,16 @@ module RuntimeAgent
       end
     end
 
+    class FakeHealthChecker
+      def initialize(result)
+        @result = result
+      end
+
+      def wait_until_ready(deployment:, runtime_instance:, timeout_seconds:)
+        @result
+      end
+    end
+
     setup do
       @node = Node.create!(name: "Local", hostname: "local.test", local: true)
       @owner = User.create!(email: "agent@example.com", password: "password123")
@@ -57,7 +67,7 @@ module RuntimeAgent
         FakeRunner.success,
         FakeRunner.success("container-123\n")
       ])
-      agent = LocalDockerAgent.new(runner: runner)
+      agent = LocalDockerAgent.new(runner: runner, health_checker: successful_health_checker)
 
       assert_difference -> { @app.runtime_instances.count }, 1 do
         result = agent.start_app(@app)
@@ -69,9 +79,11 @@ module RuntimeAgent
       runtime_instance = @app.runtime_instances.order(:created_at).last
       run_command = runner.commands.second
 
-      assert_equal "waking", @app.reload.status
-      assert_equal "starting", runtime_instance.status
+      assert_equal "running", @app.reload.status
+      assert_equal "running", runtime_instance.status
       assert_equal "container-123", runtime_instance.container_id
+      assert_equal "success", runtime_instance.health_check_result
+      assert_equal 204, runtime_instance.health_check_status_code
       assert_includes run_command, "--expose"
       assert_includes run_command, "3000"
       assert_includes run_command, "--env"
@@ -80,6 +92,37 @@ module RuntimeAgent
       assert_includes run_command, "--cpus=0.5"
       assert_includes run_command, "#{LABEL_APP_ID}=#{@app.id}"
       assert_includes @app.app_events.pluck(:event_type), "runtime.start_succeeded"
+      assert_includes @app.app_events.pluck(:event_type), "health_check.started"
+      assert_includes @app.app_events.pluck(:event_type), "health_check.succeeded"
+    end
+
+    test "marks wake failed when readiness check times out" do
+      runner = FakeRunner.new([
+        FakeRunner.success,
+        FakeRunner.success("container-123\n")
+      ])
+      health_checker = FakeHealthChecker.new(
+        HealthChecker::Result.failure(
+          kind: "http",
+          target: { host: "172.17.0.2", port: 3000 },
+          status_code: 503,
+          duration_ms: 30_000,
+          error_message: "Health check GET / did not return success before the 60 second startup timeout."
+        )
+      )
+      agent = LocalDockerAgent.new(runner: runner, health_checker: health_checker)
+
+      result = agent.start_app(@app)
+
+      runtime_instance = @app.runtime_instances.order(:created_at).last
+      assert_not result.success?
+      assert_equal "health_check_failed", result.error.code
+      assert_equal "wake_failed", @app.reload.status
+      assert_equal "crashed", runtime_instance.status
+      assert_equal "failure", runtime_instance.health_check_result
+      assert_equal 503, runtime_instance.health_check_status_code
+      assert_match "Health check GET /", runtime_instance.failure_message
+      assert_includes @app.app_events.pluck(:event_type), "health_check.failed"
     end
 
     test "normalizes start failures and records wake failure state" do
@@ -200,6 +243,19 @@ module RuntimeAgent
       assert_includes @app.app_events.pluck(:event_type), "runtime.cleanup_removed"
       assert_equal platform_runtime.id, @app.app_events.order(:created_at).last.metadata.fetch("runtime_instance_id")
       assert_equal "other-123", other_runtime.reload.container_id
+    end
+
+    private
+
+    def successful_health_checker
+      FakeHealthChecker.new(
+        HealthChecker::Result.success(
+          kind: "http",
+          target: { host: "172.17.0.2", port: 3000 },
+          status_code: 204,
+          duration_ms: 125
+        )
+      )
     end
   end
 end

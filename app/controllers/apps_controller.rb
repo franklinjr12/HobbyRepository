@@ -80,6 +80,7 @@ class AppsController < ApplicationController
       slug
       image_reference
       internal_port
+      health_check_kind
       health_check_path
       idle_timeout_seconds
       startup_timeout_seconds
@@ -94,6 +95,7 @@ class AppsController < ApplicationController
     app.deployments.create!(
       image_reference: app.image_reference,
       port: app.internal_port,
+      health_check_kind: app.health_check_kind,
       health_check_path: app.health_check_path,
       status: "created",
       current: true
@@ -106,6 +108,7 @@ class AppsController < ApplicationController
       app.deployments.create!(
         image_reference: app.image_reference,
         port: app.internal_port,
+        health_check_kind: app.health_check_kind,
         health_check_path: app.health_check_path,
         status: "created",
         current: true
@@ -117,6 +120,7 @@ class AppsController < ApplicationController
     {
       image_reference: app.image_reference,
       internal_port: app.internal_port,
+      health_check_kind: app.health_check_kind,
       health_check_path: app.health_check_path
     }
   end

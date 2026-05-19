@@ -46,7 +46,7 @@
         <dt>Internal port</dt>
         <dd><%= @app.internal_port.presence || "Not configured" %></dd>
         <dt>Health check</dt>
-        <dd><%= @app.health_check_path %></dd>
+        <dd><%= @app.health_check_kind.humanize %><%= " #{@app.health_check_path}" if @app.health_check_path.present? %></dd>
         <dt>Idle timeout</dt>
         <dd><%= pluralize(@app.idle_timeout_seconds, "second") %></dd>
         <dt>Startup timeout</dt>
@@ -67,7 +67,7 @@
           <dt>Port</dt>
           <dd><%= @app.current_deployment.port %></dd>
           <dt>Health check</dt>
-          <dd><%= @app.current_deployment.health_check_path %></dd>
+          <dd><%= @app.current_deployment.health_check_kind.humanize %><%= " #{@app.current_deployment.health_check_path}" if @app.current_deployment.health_check_path.present? %></dd>
         </dl>
       <% else %>
         <p>No deployment has been created.</p>
@@ -124,6 +124,12 @@
           <dd><%= @runtime_instance.stopped_at || "Not stopped" %></dd>
           <dt>Exit code</dt>
           <dd><%= @runtime_instance.exit_code.nil? ? "None" : @runtime_instance.exit_code %></dd>
+          <dt>Health check result</dt>
+          <dd><%= @runtime_instance.health_check_result.presence || "Not checked" %></dd>
+          <dt>Health check status</dt>
+          <dd><%= @runtime_instance.health_check_status_code.presence || "None" %></dd>
+          <dt>Health checked</dt>
+          <dd><%= @runtime_instance.health_check_checked_at || "Never" %></dd>
         </dl>
       <% else %>
         <p>No runtime instance has been recorded.</p>

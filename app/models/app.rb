@@ -2,6 +2,9 @@ class App < ApplicationRecord
   DEFAULT_IDLE_TIMEOUT_SECONDS = 900
   DEFAULT_STARTUP_TIMEOUT_SECONDS = 60
   DEFAULT_HEALTH_CHECK_PATH = "/".freeze
+  DEFAULT_HEALTH_CHECK_KIND = "http".freeze
+
+  HEALTH_CHECK_KINDS = %w[http port].freeze
 
   STATUSES = %w[
     created
@@ -62,6 +65,10 @@ class App < ApplicationRecord
                      message: "must use lowercase letters, numbers, and hyphens"
                    }
   validates :status, inclusion: { in: STATUSES }
+  validates :health_check_kind, inclusion: { in: HEALTH_CHECK_KINDS }
+  validates :health_check_path, presence: true, if: :http_health_check?
+  validates :health_check_path, format: { with: %r{\A/[^\r\n]*\z}, message: "must start with /" },
+                                allow_blank: true
   validates :internal_port,
             numericality: { only_integer: true, greater_than: 0, less_than: 65_536 },
             allow_nil: true
@@ -142,10 +149,20 @@ class App < ApplicationRecord
     )
   end
 
+  def http_health_check?
+    health_check_kind == "http"
+  end
+
+  def port_health_check?
+    health_check_kind == "port"
+  end
+
   private
 
   def assign_defaults
-    self.health_check_path = DEFAULT_HEALTH_CHECK_PATH if health_check_path.blank?
+    self.health_check_kind = DEFAULT_HEALTH_CHECK_KIND if health_check_kind.blank?
+    self.health_check_path = DEFAULT_HEALTH_CHECK_PATH if http_health_check? && health_check_path.blank?
+    self.health_check_path = nil if port_health_check?
     self.idle_timeout_seconds ||= DEFAULT_IDLE_TIMEOUT_SECONDS
     self.startup_timeout_seconds ||= DEFAULT_STARTUP_TIMEOUT_SECONDS
   end

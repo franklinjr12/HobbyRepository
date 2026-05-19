@@ -6,8 +6,9 @@ module RuntimeAgent
     DEFAULT_STOP_TIMEOUT_SECONDS = 10
     DEFAULT_LOG_LINES = 200
 
-    def initialize(runner: DockerRunner.new)
+    def initialize(runner: DockerRunner.new, health_checker: nil)
       @runner = runner
+      @health_checker = health_checker || HealthChecker.new(runner: runner)
     end
 
     def start_app(app)
@@ -39,6 +40,9 @@ module RuntimeAgent
         "Container start requested for #{app.name}",
         metadata: start_metadata(runtime_instance, container_name, deployment)
       )
+
+      readiness = wait_for_readiness!(app, deployment, runtime_instance)
+      return readiness unless readiness.success?
 
       Result.success(
         command: "start_app",
@@ -169,7 +173,7 @@ module RuntimeAgent
 
     private
 
-    attr_reader :runner
+    attr_reader :runner, :health_checker
 
     def verify_image!(image_reference)
       inspect_result = run(%w[docker image inspect] + [ image_reference ])
@@ -255,6 +259,28 @@ module RuntimeAgent
       result.success? && result.stdout.strip == PLATFORM_LABEL_VALUE
     end
 
+    def wait_for_readiness!(app, deployment, runtime_instance)
+      app.record_event!(
+        "health_check.started",
+        "Readiness check started for #{app.name}",
+        metadata: health_check_metadata(runtime_instance, deployment)
+      )
+
+      result = health_checker.wait_until_ready(
+        deployment: deployment,
+        runtime_instance: runtime_instance,
+        timeout_seconds: app.startup_timeout_seconds
+      )
+
+      if result.success?
+        mark_health_check_succeeded(app, runtime_instance, result)
+        Result.success(command: "health_check", runtime_instance_id: runtime_instance.id)
+      else
+        mark_health_check_failed(app, runtime_instance, result)
+        failure(:health_check_failed, result.error_message, details: health_check_result_metadata(result))
+      end
+    end
+
     def run(command)
       runner.call(command)
     end
@@ -267,6 +293,40 @@ module RuntimeAgent
         "runtime.start_failed",
         "Container start failed for #{app.name}",
         metadata: { runtime_instance_id: runtime_instance.id, error: normalized_failure_payload(failure) }
+      )
+    end
+
+    def mark_health_check_succeeded(app, runtime_instance, result)
+      runtime_instance.update!(
+        status: "running",
+        last_seen_at: Time.current,
+        health_check_result: "success",
+        health_check_status_code: result.status_code,
+        health_check_checked_at: Time.current
+      )
+      app.manual_override_to!("running", reason: "runtime health check passed")
+      app.record_event!(
+        "health_check.succeeded",
+        "Readiness check passed for #{app.name}",
+        metadata: health_check_result_metadata(result).merge(runtime_instance_id: runtime_instance.id)
+      )
+    end
+
+    def mark_health_check_failed(app, runtime_instance, result)
+      runtime_instance.update!(
+        status: "crashed",
+        failure_message: result.error_message,
+        stopped_at: Time.current,
+        last_seen_at: Time.current,
+        health_check_result: "failure",
+        health_check_status_code: result.status_code,
+        health_check_checked_at: Time.current
+      )
+      app.manual_override_to!("wake_failed", reason: "runtime health check failed")
+      app.record_event!(
+        "health_check.failed",
+        "Readiness check failed for #{app.name}",
+        metadata: health_check_result_metadata(result).merge(runtime_instance_id: runtime_instance.id)
       )
     end
 
@@ -286,8 +346,31 @@ module RuntimeAgent
         container_name: container_name,
         deployment_id: deployment.id,
         image_reference: deployment.image_reference,
+        port: deployment.port,
+        health_check_kind: deployment.health_check_kind,
+        health_check_path: deployment.health_check_path
+      }
+    end
+
+    def health_check_metadata(runtime_instance, deployment)
+      {
+        runtime_instance_id: runtime_instance.id,
+        container_id: runtime_instance.container_id,
+        deployment_id: deployment.id,
+        kind: deployment.health_check_kind,
+        path: deployment.health_check_path,
         port: deployment.port
       }
+    end
+
+    def health_check_result_metadata(result)
+      {
+        kind: result.kind,
+        target: result.target,
+        status_code: result.status_code,
+        duration_ms: result.duration_ms,
+        error_message: result.error_message
+      }.compact
     end
 
     def command_failure(code, message, command, result)

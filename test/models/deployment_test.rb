@@ -19,7 +19,17 @@ class DeploymentTest < ActiveSupport::TestCase
 
     assert_equal "example/app:latest", deployment.image_reference
     assert_equal 3000, deployment.port
+    assert_equal "http", deployment.health_check_kind
     assert_equal "/", deployment.health_check_path
+  end
+
+  test "copies port readiness configuration from app" do
+    @app.update!(health_check_kind: "port", health_check_path: nil)
+
+    deployment = @app.deployments.create!
+
+    assert_equal "port", deployment.health_check_kind
+    assert_nil deployment.health_check_path
   end
 
   test "mark current replaces existing current deployment" do

@@ -37,9 +37,16 @@
     </div>
   </div>
 
-  <div>
-    <%= form.label :health_check_path %>
-    <%= form.text_field :health_check_path, placeholder: "/" %>
+  <div class="form-row">
+    <div>
+      <%= form.label :health_check_kind %>
+      <%= form.select :health_check_kind, App::HEALTH_CHECK_KINDS.map { |kind| [ kind.humanize, kind ] } %>
+    </div>
+
+    <div>
+      <%= form.label :health_check_path %>
+      <%= form.text_field :health_check_path, placeholder: "/" %>
+    </div>
   </div>
 
   <% if app.persisted? %>
