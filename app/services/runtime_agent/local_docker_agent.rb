@@ -300,6 +300,8 @@ module RuntimeAgent
       runtime_instance.update!(
         status: "running",
         last_seen_at: Time.current,
+        internal_host: result.target.fetch(:host),
+        internal_port: result.target.fetch(:port),
         health_check_result: "success",
         health_check_status_code: result.status_code,
         health_check_checked_at: Time.current

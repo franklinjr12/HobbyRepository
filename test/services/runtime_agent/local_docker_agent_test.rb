@@ -82,6 +82,8 @@ module RuntimeAgent
       assert_equal "running", @app.reload.status
       assert_equal "running", runtime_instance.status
       assert_equal "container-123", runtime_instance.container_id
+      assert_equal "172.17.0.2", runtime_instance.internal_host
+      assert_equal 3000, runtime_instance.internal_port
       assert_equal "success", runtime_instance.health_check_result
       assert_equal 204, runtime_instance.health_check_status_code
       assert_includes run_command, "--expose"

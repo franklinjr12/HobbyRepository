@@ -11,6 +11,13 @@ class RuntimeInstance < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
   validates :container_id, uniqueness: true, allow_blank: true
   validates :exit_code, numericality: { only_integer: true }, allow_nil: true
+  validates :internal_port,
+            numericality: { only_integer: true, greater_than: 0, less_than: 65_536 },
+            allow_nil: true
+
+  def internal_target_ready?
+    internal_host.present? && internal_port.present?
+  end
 
   private
 

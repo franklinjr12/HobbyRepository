@@ -138,6 +138,8 @@ ensure_runtime_instance!(
   status: "running",
   container_id: "seed-warm-whoami-api",
   deployment: running_deployment,
+  internal_host: "172.18.0.20",
+  internal_port: running_deployment.port,
   started_at: 12.minutes.ago,
   last_seen_at: 1.minute.ago
 )
