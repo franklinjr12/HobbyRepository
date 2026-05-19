@@ -1,5 +1,7 @@
 class AppsController < ApplicationController
-  before_action :set_app, only: %i[show edit update wake sleep inspect_runtime]
+  before_action :set_app, only: %i[
+    show edit update wake sleep inspect_runtime provision_database rotate_database_credentials backup_database
+  ]
 
   def index
     @apps = current_user.apps.includes(:routes, :deployments, :runtime_instances).order(:name)
@@ -33,6 +35,7 @@ class AppsController < ApplicationController
 
     if @app.update(app_params)
       sync_volume_from_params(@app)
+      sync_database_from_params(@app)
       create_replacement_deployment(@app) if deployment_config_changed?(previous_deployment_config, @app)
       @app.record_event!("app.updated", "#{@app.name} settings were updated", metadata: changed_settings_metadata)
       redirect_to @app, notice: "App settings updated."
@@ -74,6 +77,34 @@ class AppsController < ApplicationController
     redirect_to @app, alert: error.message
   end
 
+  def provision_database
+    database_resource = @app.ensure_database_resource!
+    result = DatabaseResourceProvisioner.new.provision(database_resource)
+    return redirect_to @app, notice: result.message if result.success?
+
+    redirect_to @app, alert: result.message
+  rescue ActiveRecord::RecordInvalid, ArgumentError => error
+    redirect_to @app, alert: error.message
+  end
+
+  def rotate_database_credentials
+    database_resource = @app.ensure_database_resource!
+    database_resource.rotate_credentials!
+    redirect_to @app, notice: "Database credentials rotated."
+  rescue ActiveRecord::RecordInvalid, ArgumentError => error
+    redirect_to @app, alert: error.message
+  end
+
+  def backup_database
+    database_resource = @app.database_resource
+    return redirect_to @app, alert: "App has no database resource." unless database_resource
+
+    result = DatabaseBackupExporter.new.export(database_resource)
+    return redirect_to @app, notice: result.message if result.success?
+
+    redirect_to @app, alert: result.message
+  end
+
   private
 
   def set_app
@@ -94,6 +125,8 @@ class AppsController < ApplicationController
       cpu_limit
       volume_enabled
       volume_mount_path
+      database_enabled
+      database_type
     ])
   end
 
@@ -146,6 +179,7 @@ class AppsController < ApplicationController
     @runtime_instance = @app.runtime_instances.order(created_at: :desc).first
     @routes = @app.routes.order(active: :desc, hostname: :asc)
     @environment_variables = @app.environment_variables.ordered
+    @database_backups = @app.database_resource&.database_backups&.recent || DatabaseBackup.none
   end
 
   def sync_volume_from_params(app)
@@ -162,6 +196,24 @@ class AppsController < ApplicationController
         "volume.disabled",
         "Persistent volume was disabled for #{app.name}",
         metadata: app.volume.metadata
+      )
+    end
+  end
+
+  def sync_database_from_params(app)
+    if app.database_requested?
+      app.ensure_database_resource!(database_type: app.database_type)
+      app.record_event!(
+        "database.created",
+        "Shared database resource was configured for #{app.name}",
+        metadata: app.database_resource.public_metadata
+      )
+    elsif app.database_resource.present? && app.database_resource.status != "disabled"
+      app.database_resource.update!(status: "disabled")
+      app.record_event!(
+        "database.disabled",
+        "Shared database resource was disabled for #{app.name}",
+        metadata: app.database_resource.public_metadata
       )
     end
   end

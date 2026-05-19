@@ -26,9 +26,10 @@ class SeedsTest < ActiveSupport::TestCase
     assert_equal "running", seeded_apps.find_by!(slug: "warm-whoami-api").status
     assert_equal "wake_failed", seeded_apps.find_by!(slug: "broken-health-check").status
     assert_equal "created", seeded_apps.find_by!(slug: "draft-private-tool").status
-    assert_equal "********", seeded_apps.find_by!(slug: "draft-private-tool")
-                                .environment_variables.find_by!(key: "DATABASE_URL")
-                                .display_value
+    draft_database = seeded_apps.find_by!(slug: "draft-private-tool").database_resource
+    assert_equal "available", draft_database.status
+    assert_equal "********", draft_database.display_runtime_environment.fetch("DATABASE_URL")
+    assert_equal 1, draft_database.database_backups.count
   end
 
   private
@@ -41,6 +42,8 @@ class SeedsTest < ActiveSupport::TestCase
       deployments: Deployment.count,
       runtime_instances: RuntimeInstance.count,
       environment_variables: EnvironmentVariable.count,
+      database_resources: DatabaseResource.count,
+      database_backups: DatabaseBackup.count,
       app_events: AppEvent.count,
       routes: Route.count
     }

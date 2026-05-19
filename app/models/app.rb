@@ -45,6 +45,7 @@ class App < ApplicationRecord
 
   attr_accessor :manual_status_override_reason, :restoring_after_platform_restart
   attr_accessor :volume_enabled, :volume_mount_path
+  attr_accessor :database_enabled, :database_type
 
   belongs_to :owner, class_name: "User", inverse_of: :apps
   belongs_to :node
@@ -54,12 +55,14 @@ class App < ApplicationRecord
   has_many :app_events, dependent: :destroy
   has_many :environment_variables, dependent: :destroy
   has_one :volume, dependent: :restrict_with_error
+  has_one :database_resource, dependent: :restrict_with_error
 
   before_validation :assign_local_node, on: :create
   before_validation :normalize_slug
   before_validation :assign_defaults
   after_create :create_default_route
   after_create :create_requested_volume
+  after_create :create_requested_database_resource
   after_create :record_creation_event
 
   validates :name, :slug, :status, presence: true
@@ -136,21 +139,26 @@ class App < ApplicationRecord
   end
 
   def runtime_environment
-    environment_variables.to_h(&:runtime_pair)
+    environment_variables.to_h(&:runtime_pair).merge(database_resource&.runtime_environment || {})
   end
 
   def runtime_environment_metadata
     variables = environment_variables.ordered
+    database_env_keys = database_resource&.available? ? database_resource.env_var_names : []
 
     {
-      variable_count: variables.size,
-      secret_count: variables.count(&:secret?),
-      keys: variables.map(&:key)
+      variable_count: variables.size + database_env_keys.size,
+      secret_count: variables.count(&:secret?) + database_env_keys.size,
+      keys: variables.map(&:key) + database_env_keys
     }
   end
 
   def storage_volume_enabled?
     volume_requested? || volume&.active?
+  end
+
+  def shared_database_enabled?
+    database_requested? || (database_resource.present? && database_resource.status != "disabled")
   end
 
   def active_volume
@@ -159,6 +167,10 @@ class App < ApplicationRecord
 
   def volume_requested?
     ActiveModel::Type::Boolean.new.cast(volume_enabled)
+  end
+
+  def database_requested?
+    ActiveModel::Type::Boolean.new.cast(database_enabled)
   end
 
   def ensure_volume!(mount_path: nil)
@@ -180,6 +192,18 @@ class App < ApplicationRecord
       "Runtime environment prepared for #{name}",
       metadata: runtime_environment_metadata
     )
+  end
+
+  def ensure_database_resource!(database_type: nil)
+    if database_resource
+      database_resource.update!(
+        database_type: database_type.presence || database_resource.database_type,
+        status: database_resource.status == "disabled" ? "pending" : database_resource.status
+      )
+      database_resource
+    else
+      create_database_resource!(database_type: database_type.presence || DatabaseResource::DEFAULT_DATABASE_TYPE)
+    end
   end
 
   def record_request_started!(connection: false, at: Time.current)
@@ -331,6 +355,17 @@ class App < ApplicationRecord
       "volume.created",
       "Persistent volume was created for #{name}",
       metadata: volume.metadata
+    )
+  end
+
+  def create_requested_database_resource
+    return unless database_requested?
+
+    ensure_database_resource!(database_type: database_type)
+    record_event!(
+      "database.created",
+      "Shared database resource was configured for #{name}",
+      metadata: database_resource.public_metadata
     )
   end
 

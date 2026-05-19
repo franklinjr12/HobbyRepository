@@ -35,6 +35,20 @@ class AppTest < ActiveSupport::TestCase
     assert_includes app.app_events.pluck(:event_type), "volume.created"
   end
 
+  test "creates a requested shared database resource after app creation" do
+    app = App.create!(
+      name: "Database App",
+      slug: "database-app",
+      owner: @owner,
+      database_enabled: "1",
+      database_type: "postgres"
+    )
+
+    assert_equal "postgres", app.database_resource.database_type
+    assert_equal "pending", app.database_resource.status
+    assert_includes app.app_events.pluck(:event_type), "database.created"
+  end
+
   test "validates requested persistent volume mount path before creation" do
     app = App.new(
       name: "Bad Volume",
@@ -147,18 +161,33 @@ class AppTest < ActiveSupport::TestCase
     )
   end
 
+  test "injects available database resource environment into runtime payload" do
+    app = App.create!(name: "Database Runtime", slug: "database-runtime", owner: @owner, node: @node)
+    app.environment_variables.create!(key: "RAILS_ENV", value: "production")
+    database_resource = app.create_database_resource!(status: "available")
+
+    runtime_environment = app.runtime_environment
+
+    assert_equal "production", runtime_environment.fetch("RAILS_ENV")
+    assert_equal database_resource.connection_url, runtime_environment.fetch("DATABASE_URL")
+    assert_equal database_resource.password, runtime_environment.fetch("DATABASE_PASSWORD")
+  end
+
   test "records runtime environment event metadata without values" do
     app = App.create!(name: "Runtime Env", slug: "runtime-env", owner: @owner, node: @node)
     app.environment_variables.create!(key: "API_TOKEN", value: "secret-token", secret: true)
+    app.create_database_resource!(status: "available")
 
     app.record_runtime_environment_prepared!
 
     event = app.app_events.order(:created_at).last
     assert_equal "runtime.environment_prepared", event.event_type
-    assert_equal 1, event.metadata.fetch("variable_count")
-    assert_equal 1, event.metadata.fetch("secret_count")
-    assert_equal [ "API_TOKEN" ], event.metadata.fetch("keys")
+    assert_equal 7, event.metadata.fetch("variable_count")
+    assert_equal 7, event.metadata.fetch("secret_count")
+    assert_includes event.metadata.fetch("keys"), "API_TOKEN"
+    assert_includes event.metadata.fetch("keys"), "DATABASE_URL"
     assert_no_match "secret-token", event.metadata.to_json
+    assert_not_includes event.metadata.to_json, app.database_resource.password
   end
 
   test "tracks active request and connection activity" do

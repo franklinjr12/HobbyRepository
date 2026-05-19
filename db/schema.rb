@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_19_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_19_151000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -53,6 +53,45 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_140000) do
     t.index ["owner_id"], name: "index_apps_on_owner_id"
     t.index ["slug"], name: "index_apps_on_slug", unique: true
     t.index ["status"], name: "index_apps_on_status"
+  end
+
+  create_table "database_backups", force: :cascade do |t|
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.bigint "database_resource_id", null: false
+    t.text "encrypted_content"
+    t.text "failure_message"
+    t.string "filename", null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["database_resource_id"], name: "index_database_backups_on_database_resource_id"
+    t.index ["status"], name: "index_database_backups_on_status"
+  end
+
+  create_table "database_resources", force: :cascade do |t|
+    t.bigint "app_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "credentials_rotated_at"
+    t.string "database_name", null: false
+    t.string "database_name_env_var", default: "DATABASE_NAME", null: false
+    t.string "database_type", default: "postgres", null: false
+    t.string "database_url_env_var", default: "DATABASE_URL", null: false
+    t.text "encrypted_password", null: false
+    t.text "failure_message"
+    t.string "host", default: "localhost", null: false
+    t.string "host_env_var", default: "DATABASE_HOST", null: false
+    t.string "password_env_var", default: "DATABASE_PASSWORD", null: false
+    t.integer "port", default: 5432, null: false
+    t.string "port_env_var", default: "DATABASE_PORT", null: false
+    t.datetime "provisioned_at"
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.string "username", null: false
+    t.string "username_env_var", default: "DATABASE_USERNAME", null: false
+    t.index ["app_id"], name: "index_database_resources_on_app_id", unique: true
+    t.index ["database_name"], name: "index_database_resources_on_database_name", unique: true
+    t.index ["status"], name: "index_database_resources_on_status"
+    t.index ["username"], name: "index_database_resources_on_username", unique: true
   end
 
   create_table "deployments", force: :cascade do |t|
@@ -163,6 +202,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_140000) do
   add_foreign_key "app_events", "apps"
   add_foreign_key "apps", "nodes"
   add_foreign_key "apps", "users", column: "owner_id"
+  add_foreign_key "database_backups", "database_resources"
+  add_foreign_key "database_resources", "apps"
   add_foreign_key "deployments", "apps"
   add_foreign_key "environment_variables", "apps"
   add_foreign_key "routes", "apps"

@@ -435,6 +435,10 @@ dd {
   margin-top: 12px;
 }
 
+.resource-actions {
+  margin-top: 18px;
+}
+
 .checkbox-row {
   display: inline-flex;
   gap: 8px;

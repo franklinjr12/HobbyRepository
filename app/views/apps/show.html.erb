@@ -133,6 +133,56 @@
     </article>
 
     <article>
+      <h2>Shared Database</h2>
+      <% if @app.database_resource %>
+        <dl>
+          <dt>Status</dt>
+          <dd><%= @app.database_resource.status.humanize %></dd>
+          <dt>Type</dt>
+          <dd><%= @app.database_resource.database_type.humanize %></dd>
+          <dt>Database</dt>
+          <dd><code><%= @app.database_resource.database_name %></code></dd>
+          <dt>Username</dt>
+          <dd><code><%= @app.database_resource.username %></code></dd>
+          <dt>Connection vars</dt>
+          <dd><code><%= @app.database_resource.env_var_names.join(", ") %></code></dd>
+          <dt>Secret values</dt>
+          <dd><code><%= DatabaseResource::MASK %></code></dd>
+          <dt>Provisioned</dt>
+          <dd><%= @app.database_resource.provisioned_at || "Not provisioned" %></dd>
+        </dl>
+        <div class="inline-actions resource-actions">
+          <%= button_to "Provision", provision_database_app_path(@app), method: :post, class: "button compact" %>
+          <%= button_to "Rotate credentials", rotate_database_credentials_app_path(@app), method: :post, class: "button compact secondary", form: { data: { turbo_confirm: "Rotate database credentials now?" } } %>
+          <%= button_to "Backup", backup_database_app_path(@app), method: :post, class: "button compact secondary" %>
+        </div>
+      <% else %>
+        <p>No shared database configured.</p>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Database Backups</h2>
+      <% if @database_backups.any? %>
+        <dl>
+          <% @database_backups.each do |backup| %>
+            <dt><%= backup.status.humanize %></dt>
+            <dd>
+              <% if backup.completed? %>
+                <%= link_to backup.filename, app_database_backup_path(@app, backup) %>
+              <% else %>
+                <%= backup.filename %>
+              <% end %>
+              <span class="muted"><%= backup.completed_at || backup.failure_message %></span>
+            </dd>
+          <% end %>
+        </dl>
+      <% else %>
+        <p>No database backups have been created.</p>
+      <% end %>
+    </article>
+
+    <article>
       <h2>Runtime Instance</h2>
       <% if @runtime_instance %>
         <dl>

@@ -60,6 +60,7 @@ module RuntimeAgent
         current: true
       )
       @app.environment_variables.create!(key: "RAILS_ENV", value: "production")
+      @database_resource = @app.create_database_resource!(status: "available")
       @app.create_volume!(mount_path: "/app/data")
     end
 
@@ -91,6 +92,8 @@ module RuntimeAgent
       assert_includes run_command, "3000"
       assert_includes run_command, "--env"
       assert_includes run_command, "RAILS_ENV=production"
+      assert_includes run_command, "DATABASE_URL=#{@database_resource.connection_url}"
+      assert_includes run_command, "DATABASE_PASSWORD=#{@database_resource.password}"
       assert_includes run_command, "--volume"
       assert_includes run_command, "#{@app.volume.host_path}:/app/data"
       assert_includes run_command, "--memory=134217728"

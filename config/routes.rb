@@ -6,11 +6,15 @@ Rails.application.routes.draw do
   delete "sign_out", to: "sessions#destroy"
   resources :apps, only: %i[index new create show edit update] do
     resources :environment_variables, only: %i[create update destroy]
+    resources :database_backups, only: %i[show]
 
     member do
       post :wake
       post :sleep
       post :inspect_runtime
+      post :provision_database
+      post :rotate_database_credentials
+      post :backup_database
     end
   end
 

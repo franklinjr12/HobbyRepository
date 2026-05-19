@@ -24,6 +24,26 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  class FakeProvisioner
+    def provision(database_resource)
+      database_resource.mark_provisioned!
+      DatabaseResourceProvisioner::Result.new(true, "Database provisioned.")
+    end
+  end
+
+  class FakeBackupExporter
+    def export(database_resource)
+      backup = database_resource.database_backups.create!
+      backup.mark_completed!("-- Database: #{database_resource.database_name}\n")
+      database_resource.app.record_event!(
+        "database.backup_completed",
+        "Database backup completed for #{database_resource.app.name}",
+        metadata: backup.public_metadata
+      )
+      DatabaseBackupExporter::Result.new(true, "Database backup completed.", backup)
+    end
+  end
+
   setup do
     @user = User.create!(email: "apps@example.com", password: "password123")
     Node.ensure_local!
@@ -38,23 +58,43 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     RuntimeAgent.define_singleton_method(:build) { original.call }
   end
 
+  def with_database_provisioner(provisioner)
+    original = DatabaseResourceProvisioner.method(:new)
+    DatabaseResourceProvisioner.define_singleton_method(:new) { provisioner }
+    yield
+  ensure
+    DatabaseResourceProvisioner.define_singleton_method(:new) { |*args, **kwargs| original.call(*args, **kwargs) }
+  end
+
+  def with_database_backup_exporter(exporter)
+    original = DatabaseBackupExporter.method(:new)
+    DatabaseBackupExporter.define_singleton_method(:new) { exporter }
+    yield
+  ensure
+    DatabaseBackupExporter.define_singleton_method(:new) { |*args, **kwargs| original.call(*args, **kwargs) }
+  end
+
   test "creates app with default route, current deployment, and events" do
     assert_difference -> { App.count }, 1 do
       assert_difference -> { Route.count }, 1 do
         assert_difference -> { Deployment.count }, 1 do
           assert_difference -> { Volume.count }, 1 do
-            post apps_path, params: {
-              app: {
-                name: "Tiny Service",
-                image_reference: "example/tiny:latest",
-                internal_port: 3000,
-                idle_timeout_seconds: 900,
-                health_check_kind: "http",
-                health_check_path: "/up",
-                volume_enabled: "1",
-                volume_mount_path: "/data"
+            assert_difference -> { DatabaseResource.count }, 1 do
+              post apps_path, params: {
+                app: {
+                  name: "Tiny Service",
+                  image_reference: "example/tiny:latest",
+                  internal_port: 3000,
+                  idle_timeout_seconds: 900,
+                  health_check_kind: "http",
+                  health_check_path: "/up",
+                  volume_enabled: "1",
+                  volume_mount_path: "/data",
+                  database_enabled: "1",
+                  database_type: "postgres"
+                }
               }
-            }
+            end
           end
         end
       end
@@ -67,7 +107,8 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "http", app.current_deployment.health_check_kind
     assert_equal "/up", app.current_deployment.health_check_path
     assert_equal "/data", app.volume.mount_path
-    assert_equal %w[volume.created app.created deployment.created], app.app_events.order(:created_at).pluck(:event_type)
+    assert_equal "pending", app.database_resource.status
+    assert_equal %w[volume.created database.created app.created deployment.created], app.app_events.order(:created_at).pluck(:event_type)
   end
 
   test "index shows owned app management details" do
@@ -143,6 +184,53 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_select "code", text: "/app/data"
   end
 
+  test "show includes shared database details without secret values" do
+    app = @user.apps.create!(name: "Database App", image_reference: "example/db:latest", internal_port: 3000)
+    database_resource = app.create_database_resource!(status: "available")
+
+    get app_path(app)
+
+    assert_response :success
+    assert_select "h2", text: "Shared Database"
+    assert_select "code", text: "DATABASE_URL, DATABASE_NAME, DATABASE_USERNAME, DATABASE_PASSWORD, DATABASE_HOST, DATABASE_PORT"
+    assert_select "code", text: "********"
+    assert_select "body", text: /#{Regexp.escape(database_resource.password)}/, count: 0
+  end
+
+  test "manual database actions provision rotate and back up credentials" do
+    app = @user.apps.create!(name: "Database Actions", image_reference: "example/db:latest", internal_port: 3000)
+
+    with_database_provisioner(FakeProvisioner.new) do
+      post provision_database_app_path(app)
+    end
+
+    assert_redirected_to app_path(app)
+    assert_equal "available", app.reload.database_resource.status
+
+    original_password = app.database_resource.password
+    post rotate_database_credentials_app_path(app)
+
+    assert_redirected_to app_path(app)
+    assert_not_equal original_password, app.reload.database_resource.password
+
+    with_database_backup_exporter(FakeBackupExporter.new) do
+      assert_difference -> { DatabaseBackup.count }, 1 do
+        post backup_database_app_path(app)
+      end
+    end
+
+    backup = app.database_resource.database_backups.last
+    assert_redirected_to app_path(app)
+    assert_equal "completed", backup.status
+    assert_includes app.app_events.pluck(:event_type), "database.backup_completed"
+
+    get app_database_backup_path(app, backup)
+
+    assert_response :success
+    assert_match "Database: #{app.database_resource.database_name}", response.body
+    assert_not_includes response.body, app.database_resource.password
+  end
+
   test "settings update can create replacement deployment" do
     app = @user.apps.create!(
       name: "Editable App",
@@ -168,7 +256,9 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
           memory_limit_bytes: 268_435_456,
           cpu_limit: 0.5,
           volume_enabled: "1",
-          volume_mount_path: "/cache"
+          volume_mount_path: "/cache",
+          database_enabled: "1",
+          database_type: "postgres"
         }
       }
     end
@@ -180,6 +270,7 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "port", app.current_deployment.health_check_kind
     assert_nil app.current_deployment.health_check_path
     assert_equal "/cache", app.volume.mount_path
+    assert_equal "pending", app.database_resource.status
     assert_not original_deployment.reload.current?
     assert_includes app.app_events.order(:created_at).pluck(:event_type), "app.updated"
   end

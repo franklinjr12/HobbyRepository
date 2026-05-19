@@ -88,5 +88,20 @@
     </div>
   </div>
 
+  <div class="settings-section">
+    <strong>Shared database</strong>
+    <p>Provision app-scoped Postgres credentials and inject connection variables into the runtime environment.</p>
+
+    <label class="checkbox-row">
+      <%= form.check_box :database_enabled, checked: app.shared_database_enabled? %>
+      Enable shared database
+    </label>
+
+    <div>
+      <%= form.label :database_type %>
+      <%= form.select :database_type, DatabaseResource::DATABASE_TYPES.map { |type| [ type.humanize, type ] }, selected: app.database_resource&.database_type || DatabaseResource::DEFAULT_DATABASE_TYPE %>
+    </div>
+  </div>
+
   <%= form.submit app.persisted? ? "Save settings" : "Create app" %>
 <% end %>

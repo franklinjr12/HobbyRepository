@@ -34,6 +34,27 @@ def ensure_volume!(app, mount_path: Volume::DEFAULT_MOUNT_PATH)
   )
 end
 
+def ensure_database_resource!(app, status: "available")
+  database_resource = app.ensure_database_resource!
+  database_resource.mark_provisioned! if status == "available" && !database_resource.available?
+  database_resource.update!(status: status) unless database_resource.status == status
+  ensure_event!(
+    app,
+    event_type: "database.created",
+    message: "Shared database resource was configured for #{app.name}",
+    metadata: database_resource.public_metadata
+  )
+  database_resource
+end
+
+def ensure_database_backup!(database_resource)
+  backup = database_resource.database_backups.find_or_initialize_by(filename: "#{database_resource.database_name}-seed.sql")
+  backup.status = "completed"
+  backup.completed_at ||= Time.current
+  backup.content = "-- Seed backup for #{database_resource.database_name}\n"
+  backup.save!
+end
+
 def ensure_event!(app, event_type:, message:, metadata: {})
   app.app_events.find_or_create_by!(event_type: event_type, message: message) do |event|
     event.metadata = metadata
@@ -227,7 +248,8 @@ draft_app = ensure_demo_app!(
   status: "created"
 )
 ensure_environment_variable!(draft_app, key: "RAILS_ENV", value: "production")
-ensure_environment_variable!(draft_app, key: "DATABASE_URL", value: "postgres://demo:demo@db/private_tool", secret: true)
+draft_database = ensure_database_resource!(draft_app, status: "available")
+ensure_database_backup!(draft_database)
 ensure_volume!(draft_app, mount_path: "/app/storage")
 ensure_event!(
   draft_app,
@@ -237,6 +259,6 @@ ensure_event!(
 )
 
 Rails.logger.info(
-  "Seeded #{User.count} user, #{App.count} apps, #{Deployment.count} deployments, and #{AppEvent.count} app events."
+  "Seeded #{User.count} user, #{App.count} apps, #{Deployment.count} deployments, #{DatabaseResource.count} database resources, and #{AppEvent.count} app events."
 )
 Rails.logger.info("Sign in with #{admin.email} / #{ENV.fetch('SEED_USER_PASSWORD', 'password123')}.")
