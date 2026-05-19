@@ -7,6 +7,9 @@ Rails.application.routes.draw do
   resources :apps, only: %i[index new create show edit update] do
     resources :environment_variables, only: %i[create update destroy]
     resources :database_backups, only: %i[show]
+    resources :app_logs, only: %i[index], path: "logs" do
+      post :collect, on: :collection
+    end
 
     member do
       post :wake

@@ -177,6 +177,7 @@ class AppsController < ApplicationController
   def load_app_detail
     @events = @app.app_events.order(created_at: :desc).limit(20)
     @runtime_instance = @app.runtime_instances.order(created_at: :desc).first
+    @latest_logs = @app.app_logs.includes(:runtime_instance, :deployment).recent(20)
     @routes = @app.routes.order(active: :desc, hostname: :asc)
     @environment_variables = @app.environment_variables.ordered
     @database_backups = @app.database_resource&.database_backups&.recent || DatabaseBackup.none

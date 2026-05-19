@@ -8,6 +8,8 @@
 #     MovieGenre.find_or_create_by!(name: genre_name)
 #   end
 
+require "digest"
+
 node = Node.ensure_local!
 
 admin = User.find_or_initialize_by(email: ENV.fetch("SEED_USER_EMAIL", "admin@example.com"))
@@ -59,6 +61,18 @@ def ensure_event!(app, event_type:, message:, metadata: {})
   app.app_events.find_or_create_by!(event_type: event_type, message: message) do |event|
     event.metadata = metadata
   end
+end
+
+def ensure_app_log!(app, runtime_instance:, stream:, logged_at:, message:)
+  log = app.app_logs.find_or_initialize_by(
+    runtime_instance: runtime_instance,
+    deployment: runtime_instance.deployment,
+    stream: stream,
+    content_hash: Digest::SHA256.hexdigest(message)
+  )
+  log.logged_at ||= logged_at
+  log.message = message
+  log.save!
 end
 
 def ensure_current_deployment!(app, image_reference:, port:, health_check_path:, status: "deployed")
@@ -167,7 +181,7 @@ running_deployment = ensure_current_deployment!(
   port: 80,
   health_check_path: "/"
 )
-ensure_runtime_instance!(
+running_runtime = ensure_runtime_instance!(
   running_app,
   status: "running",
   container_id: "seed-warm-whoami-api",
@@ -176,6 +190,20 @@ ensure_runtime_instance!(
   internal_port: running_deployment.port,
   started_at: 12.minutes.ago,
   last_seen_at: 1.minute.ago
+)
+ensure_app_log!(
+  running_app,
+  runtime_instance: running_runtime,
+  stream: "stdout",
+  logged_at: 10.minutes.ago,
+  message: "Server started on port #{running_deployment.port}"
+)
+ensure_app_log!(
+  running_app,
+  runtime_instance: running_runtime,
+  stream: "stdout",
+  logged_at: 2.minutes.ago,
+  message: "GET / 200 3ms"
 )
 ensure_event!(
   running_app,
@@ -212,7 +240,7 @@ failed_deployment = ensure_current_deployment!(
   health_check_path: "/ready",
   status: "failed"
 )
-ensure_runtime_instance!(
+failed_runtime = ensure_runtime_instance!(
   failed_app,
   status: "crashed",
   container_id: "seed-broken-health-check",
@@ -222,6 +250,13 @@ ensure_runtime_instance!(
   last_seen_at: 59.minutes.ago,
   exit_code: 1,
   failure_message: "Health check GET /ready did not return success before the 10 second startup timeout."
+)
+ensure_app_log!(
+  failed_app,
+  runtime_instance: failed_runtime,
+  stream: "stderr",
+  logged_at: 58.minutes.ago,
+  message: "Readiness endpoint /ready returned 404"
 )
 ensure_event!(
   failed_app,
@@ -259,6 +294,6 @@ ensure_event!(
 )
 
 Rails.logger.info(
-  "Seeded #{User.count} user, #{App.count} apps, #{Deployment.count} deployments, #{DatabaseResource.count} database resources, and #{AppEvent.count} app events."
+  "Seeded #{User.count} user, #{App.count} apps, #{Deployment.count} deployments, #{DatabaseResource.count} database resources, #{AppLog.count} app logs, and #{AppEvent.count} app events."
 )
 Rails.logger.info("Sign in with #{admin.email} / #{ENV.fetch('SEED_USER_PASSWORD', 'password123')}.")

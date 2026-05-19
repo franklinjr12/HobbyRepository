@@ -4,6 +4,7 @@ class RuntimeInstance < ApplicationRecord
   belongs_to :app
   belongs_to :node
   belongs_to :deployment, optional: true
+  has_many :app_logs, dependent: :destroy
 
   before_validation :assign_node_from_app
   before_validation :assign_deployment_from_app
@@ -17,6 +18,10 @@ class RuntimeInstance < ApplicationRecord
 
   def internal_target_ready?
     internal_host.present? && internal_port.present?
+  end
+
+  def log_label
+    container_id.presence || "Runtime ##{id}"
   end
 
   private

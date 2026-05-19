@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_19_151000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_19_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -24,6 +24,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_151000) do
     t.index ["app_id"], name: "index_app_events_on_app_id"
     t.index ["created_at"], name: "index_app_events_on_created_at"
     t.index ["event_type"], name: "index_app_events_on_event_type"
+  end
+
+  create_table "app_logs", force: :cascade do |t|
+    t.bigint "app_id", null: false
+    t.string "content_hash", null: false
+    t.datetime "created_at", null: false
+    t.bigint "deployment_id"
+    t.datetime "logged_at", null: false
+    t.text "message", null: false
+    t.bigint "runtime_instance_id"
+    t.string "stream", null: false
+    t.datetime "updated_at", null: false
+    t.index ["app_id", "logged_at"], name: "index_app_logs_on_app_id_and_logged_at"
+    t.index ["app_id"], name: "index_app_logs_on_app_id"
+    t.index ["deployment_id"], name: "index_app_logs_on_deployment_id"
+    t.index ["runtime_instance_id", "stream", "logged_at", "content_hash"], name: "index_app_logs_on_runtime_stream_time_hash", unique: true
+    t.index ["runtime_instance_id"], name: "index_app_logs_on_runtime_instance_id"
+    t.index ["stream"], name: "index_app_logs_on_stream"
   end
 
   create_table "apps", force: :cascade do |t|
@@ -200,6 +218,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_151000) do
   end
 
   add_foreign_key "app_events", "apps"
+  add_foreign_key "app_logs", "apps"
+  add_foreign_key "app_logs", "deployments"
+  add_foreign_key "app_logs", "runtime_instances"
   add_foreign_key "apps", "nodes"
   add_foreign_key "apps", "users", column: "owner_id"
   add_foreign_key "database_backups", "database_resources"

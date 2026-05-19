@@ -1,0 +1,69 @@
+<% content_for :title, "#{@app.name} logs" %>
+<% content_for :head do %>
+  <% if @auto_refresh %>
+    <meta http-equiv="refresh" content="5">
+  <% end %>
+<% end %>
+
+<main class="page-shell">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow"><%= @app.slug %></p>
+      <h1>Logs</h1>
+    </div>
+    <div class="inline-actions">
+      <%= button_to "Refresh from runtime", collect_app_app_logs_path(@app), method: :post, class: "button" %>
+      <%= link_to "App detail", app_path(@app), class: "button secondary" %>
+    </div>
+  </header>
+
+  <section class="filter-bar">
+    <%= form_with url: app_app_logs_path(@app), method: :get, class: "stacked-form", local: true do |form| %>
+      <div class="form-row">
+        <div>
+          <%= form.label :runtime_instance_id, "Runtime" %>
+          <%= form.select :runtime_instance_id,
+                          options_from_collection_for_select(@runtime_instances, :id, :log_label, params[:runtime_instance_id]),
+                          { include_blank: "All runtimes" } %>
+        </div>
+        <div>
+          <%= form.label :deployment_id, "Deployment" %>
+          <%= form.select :deployment_id,
+                          options_from_collection_for_select(@deployments, :id, :log_label, params[:deployment_id]),
+                          { include_blank: "All deployments" } %>
+        </div>
+      </div>
+      <div class="form-row">
+        <div>
+          <%= form.label :q, "Search" %>
+          <%= form.search_field :q, value: params[:q], placeholder: "startup, error, port..." %>
+        </div>
+        <label class="checkbox-row log-refresh-toggle">
+          <%= form.check_box :auto_refresh, checked: @auto_refresh %>
+          Auto-refresh
+        </label>
+      </div>
+      <div class="inline-actions">
+        <%= form.submit "Apply filters", class: "button compact" %>
+        <%= link_to "Clear", app_app_logs_path(@app), class: "button compact secondary" %>
+      </div>
+    <% end %>
+  </section>
+
+  <section class="log-panel">
+    <% if @logs.any? %>
+      <ol class="log-list">
+        <% @logs.each do |log| %>
+          <li class="log-entry log-entry-<%= log.stream %>">
+            <time datetime="<%= log.logged_at.iso8601 %>"><%= log.logged_at.to_fs(:db) %></time>
+            <span class="log-stream"><%= log.stream %></span>
+            <code><%= log.message %></code>
+            <small><%= log.metadata_label %></small>
+          </li>
+        <% end %>
+      </ol>
+    <% else %>
+      <p>No logs match these filters.</p>
+    <% end %>
+  </section>
+</main>

@@ -144,6 +144,13 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
       container_id: "abc123",
       failure_message: "boot failed"
     )
+    app.app_logs.create!(
+      runtime_instance: app.runtime_instances.last,
+      deployment: app.current_deployment,
+      stream: "stderr",
+      logged_at: 1.minute.ago,
+      message: "boot failed"
+    )
     app.record_event!("health_check.failed", "Health check failed")
 
     get app_path(app)
@@ -154,7 +161,8 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_select "dt", text: "Health check result"
     assert_select "h2", text: "Routes"
     assert_select "form[action='#{inspect_runtime_app_path(app)}']"
-    assert_select "pre", text: /boot failed/
+    assert_select "a[href='#{app_app_logs_path(app)}']", text: "Logs"
+    assert_select "pre", text: /stderr: boot failed/
     assert_select ".event-list strong", text: "health_check.failed"
   end
 

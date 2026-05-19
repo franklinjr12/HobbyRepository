@@ -44,6 +44,7 @@ class SeedsTest < ActiveSupport::TestCase
       environment_variables: EnvironmentVariable.count,
       database_resources: DatabaseResource.count,
       database_backups: DatabaseBackup.count,
+      app_logs: AppLog.count,
       app_events: AppEvent.count,
       routes: Route.count
     }

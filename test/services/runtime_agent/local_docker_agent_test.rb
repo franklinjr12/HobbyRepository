@@ -216,15 +216,22 @@ module RuntimeAgent
     test "gets container logs through the normalized runtime interface" do
       @app.runtime_instances.create!(status: "running", container_id: "container-123")
       runner = FakeRunner.new([
-        DockerRunner::CommandResult.new("booted\n", "warned\n", 0)
+        DockerRunner::CommandResult.new(
+          "2026-05-19T12:00:00.000000000Z booted\n",
+          "2026-05-19T12:00:01.000000000Z warned\n",
+          0
+        )
       ])
       agent = LocalDockerAgent.new(runner: runner)
 
-      result = agent.get_logs(@app, lines: 50)
+      assert_difference -> { @app.app_logs.count }, 2 do
+        result = agent.get_logs(@app, lines: 50)
 
-      assert result.success?
-      assert_equal "booted\nwarned\n", result.payload.fetch(:logs)
-      assert_equal %w[docker logs --tail 50 container-123], runner.commands.first
+        assert result.success?
+        assert_includes result.payload.fetch(:logs), "booted"
+      end
+      assert_equal %w[docker logs --timestamps --tail 50 container-123], runner.commands.first
+      assert_equal %w[stdout stderr], @app.app_logs.order(:logged_at).pluck(:stream)
     end
 
     test "cleanup removes only old stopped platform containers and records an event" do

@@ -53,6 +53,7 @@ class App < ApplicationRecord
   has_many :deployments, dependent: :restrict_with_error
   has_many :routes, dependent: :restrict_with_error
   has_many :app_events, dependent: :destroy
+  has_many :app_logs, dependent: :destroy
   has_many :environment_variables, dependent: :destroy
   has_one :volume, dependent: :restrict_with_error
   has_one :database_resource, dependent: :restrict_with_error

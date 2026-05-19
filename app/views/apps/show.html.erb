@@ -8,6 +8,7 @@
     </div>
     <div class="inline-actions">
       <%= link_to "Settings", edit_app_path(@app), class: "button secondary" %>
+      <%= link_to "Logs", app_app_logs_path(@app), class: "button secondary" %>
       <%= button_to "Wake", wake_app_path(@app), method: :post, class: "button" %>
       <%= button_to "Sleep", sleep_app_path(@app), method: :post, class: "button secondary", form: { data: { turbo_confirm: "Put this app to sleep now?" } } %>
       <%= button_to "Inspect", inspect_runtime_app_path(@app), method: :post, class: "button secondary" %>
@@ -212,15 +213,21 @@
 
     <article>
       <h2>Latest Logs</h2>
-      <% if @runtime_instance&.failure_message.present? %>
+      <% if @latest_logs.any? %>
+        <pre class="log-output"><% @latest_logs.reverse_each do |log| %><%= "[#{log.logged_at.to_fs(:db)}] #{log.stream}: #{log.message}" %>
+<% end %></pre>
+        <p class="card-action"><%= link_to "Open full logs", app_app_logs_path(@app) %></p>
+      <% elsif @runtime_instance&.failure_message.present? %>
         <pre class="log-output"><%= @runtime_instance.failure_message %></pre>
+        <p class="card-action"><%= link_to "Open full logs", app_app_logs_path(@app) %></p>
       <% else %>
         <p>Runtime log capture has not recorded output for this app yet.</p>
+        <p class="card-action"><%= link_to "Open full logs", app_app_logs_path(@app) %></p>
       <% end %>
     </article>
 
     <article>
-      <h2>Recent Events</h2>
+      <h2>Event Timeline</h2>
       <% if @events.any? %>
         <ol class="event-list">
           <% @events.each do |event| %>
@@ -228,6 +235,12 @@
               <strong><%= event.event_type %></strong>
               <span><%= event.message %></span>
               <small><%= event.created_at.to_fs(:short) %></small>
+              <% if event.metadata_summary.present? %>
+                <small><%= event.metadata_summary %></small>
+              <% end %>
+              <% if event.related_runtime_instance_id.present? %>
+                <small><%= link_to "Related logs", app_app_logs_path(@app, runtime_instance_id: event.related_runtime_instance_id) %></small>
+              <% end %>
             </li>
           <% end %>
         </ol>

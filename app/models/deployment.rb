@@ -3,6 +3,7 @@ class Deployment < ApplicationRecord
 
   belongs_to :app
   has_many :runtime_instances, dependent: :restrict_with_error
+  has_many :app_logs, dependent: :nullify
 
   before_validation :copy_defaults_from_app
   after_create :record_creation_event
@@ -20,6 +21,10 @@ class Deployment < ApplicationRecord
       app.deployments.where.not(id: id).find_each { |deployment| deployment.update!(current: false) }
       update!(current: true, deployed_at: deployed_at || Time.current)
     end
+  end
+
+  def log_label
+    "Deployment ##{id} - #{image_reference}"
   end
 
   private

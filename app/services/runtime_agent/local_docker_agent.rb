@@ -69,6 +69,7 @@ module RuntimeAgent
       end
 
       runtime_instance.update!(status: "stopped", stopped_at: Time.current, last_seen_at: Time.current)
+      collect_runtime_logs(app, runtime_instance)
       app.manual_override_to!("stopped", reason: "runtime agent stop completed")
       app.record_event!(
         "runtime.stop_succeeded",
@@ -109,6 +110,7 @@ module RuntimeAgent
       inspection = JSON.parse(result.stdout).first
       state = inspection.fetch("State", {})
       sync_inspection!(app, runtime_instance, state)
+      collect_runtime_logs(app, runtime_instance)
 
       Result.success(
         command: "inspect_app",
@@ -126,9 +128,16 @@ module RuntimeAgent
       runtime_instance = latest_container_runtime(app)
       return failure(:missing_runtime, "App has no container-backed runtime instance") unless runtime_instance
 
-      command = %w[docker logs] + [ "--tail", lines.to_s, runtime_instance.container_id ]
+      command = %w[docker logs] + [ "--timestamps", "--tail", lines.to_s, runtime_instance.container_id ]
       result = run(command)
       return command_failure(:logs_failed, "Container logs could not be read", command, result) unless result.success?
+
+      AppLog.ingest_docker_output!(
+        app: app,
+        runtime_instance: runtime_instance,
+        stdout: result.stdout,
+        stderr: result.stderr
+      )
 
       Result.success(
         command: "get_logs",
@@ -338,6 +347,7 @@ module RuntimeAgent
         health_check_status_code: result.status_code,
         health_check_checked_at: Time.current
       )
+      collect_runtime_logs(app, runtime_instance)
       app.manual_override_to!("wake_failed", reason: "runtime health check failed")
       app.record_event!(
         "health_check.failed",
@@ -389,6 +399,12 @@ module RuntimeAgent
         duration_ms: result.duration_ms,
         error_message: result.error_message
       }.compact
+    end
+
+    def collect_runtime_logs(app, runtime_instance)
+      return if runtime_instance&.container_id.blank?
+
+      get_logs(app)
     end
 
     def command_failure(code, message, command, result)
