@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_19_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_19_170200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -44,6 +44,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_160000) do
     t.index ["stream"], name: "index_app_logs_on_stream"
   end
 
+  create_table "app_request_metrics", force: :cascade do |t|
+    t.bigint "app_id", null: false
+    t.boolean "cold_start", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "occurred_at", null: false
+    t.string "path"
+    t.string "request_method"
+    t.integer "status_code"
+    t.datetime "updated_at", null: false
+    t.integer "wake_duration_ms"
+    t.index ["app_id", "cold_start"], name: "index_app_request_metrics_on_app_id_and_cold_start"
+    t.index ["app_id", "occurred_at"], name: "index_app_request_metrics_on_app_id_and_occurred_at"
+    t.index ["app_id"], name: "index_app_request_metrics_on_app_id"
+    t.index ["status_code"], name: "index_app_request_metrics_on_status_code"
+  end
+
   create_table "apps", force: :cascade do |t|
     t.integer "active_connection_count", default: 0, null: false
     t.integer "active_request_count", default: 0, null: false
@@ -71,6 +87,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_160000) do
     t.index ["owner_id"], name: "index_apps_on_owner_id"
     t.index ["slug"], name: "index_apps_on_slug", unique: true
     t.index ["status"], name: "index_apps_on_status"
+  end
+
+  create_table "cold_start_metrics", force: :cascade do |t|
+    t.bigint "app_id", null: false
+    t.integer "container_start_duration_ms"
+    t.datetime "created_at", null: false
+    t.text "failure_message"
+    t.datetime "finished_at", null: false
+    t.integer "health_check_duration_ms"
+    t.bigint "runtime_instance_id", null: false
+    t.datetime "started_at", null: false
+    t.string "status", null: false
+    t.integer "total_wake_duration_ms", null: false
+    t.datetime "updated_at", null: false
+    t.index ["app_id", "started_at"], name: "index_cold_start_metrics_on_app_id_and_started_at"
+    t.index ["app_id", "status"], name: "index_cold_start_metrics_on_app_id_and_status"
+    t.index ["app_id"], name: "index_cold_start_metrics_on_app_id"
+    t.index ["runtime_instance_id"], name: "index_cold_start_metrics_on_runtime_instance_id"
+    t.index ["status"], name: "index_cold_start_metrics_on_status"
   end
 
   create_table "database_backups", force: :cascade do |t|
@@ -194,6 +229,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_160000) do
     t.index ["status"], name: "index_runtime_instances_on_status"
   end
 
+  create_table "runtime_metric_snapshots", force: :cascade do |t|
+    t.bigint "app_id", null: false
+    t.datetime "captured_at", null: false
+    t.decimal "cpu_usage_percent", precision: 8, scale: 3
+    t.datetime "created_at", null: false
+    t.bigint "memory_usage_bytes"
+    t.bigint "runtime_instance_id", null: false
+    t.datetime "updated_at", null: false
+    t.integer "uptime_seconds"
+    t.index ["app_id", "captured_at"], name: "index_runtime_metric_snapshots_on_app_id_and_captured_at"
+    t.index ["app_id"], name: "index_runtime_metric_snapshots_on_app_id"
+    t.index ["runtime_instance_id", "captured_at"], name: "index_runtime_metrics_on_runtime_and_captured_at"
+    t.index ["runtime_instance_id"], name: "index_runtime_metric_snapshots_on_runtime_instance_id"
+  end
+
   create_table "users", force: :cascade do |t|
     t.boolean "admin", default: false, null: false
     t.datetime "created_at", null: false
@@ -221,8 +271,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_160000) do
   add_foreign_key "app_logs", "apps"
   add_foreign_key "app_logs", "deployments"
   add_foreign_key "app_logs", "runtime_instances"
+  add_foreign_key "app_request_metrics", "apps"
   add_foreign_key "apps", "nodes"
   add_foreign_key "apps", "users", column: "owner_id"
+  add_foreign_key "cold_start_metrics", "apps"
+  add_foreign_key "cold_start_metrics", "runtime_instances"
   add_foreign_key "database_backups", "database_resources"
   add_foreign_key "database_resources", "apps"
   add_foreign_key "deployments", "apps"
@@ -231,5 +284,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_160000) do
   add_foreign_key "runtime_instances", "apps"
   add_foreign_key "runtime_instances", "deployments"
   add_foreign_key "runtime_instances", "nodes"
+  add_foreign_key "runtime_metric_snapshots", "apps"
+  add_foreign_key "runtime_metric_snapshots", "runtime_instances"
   add_foreign_key "volumes", "apps"
 end

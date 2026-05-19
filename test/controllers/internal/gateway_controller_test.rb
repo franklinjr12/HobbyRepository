@@ -99,13 +99,17 @@ module Internal
     end
 
     test "activity endpoint records last activity and event metadata" do
-      post "/internal/gateway/activity", params: {
-        app_id: @managed_app.id,
-        hostname: @managed_app.default_route.hostname,
-        event: "request_started",
-        request_method: "GET",
-        path: "/docs"
-      }
+      assert_difference -> { @managed_app.app_request_metrics.count }, 1 do
+        post "/internal/gateway/activity", params: {
+          app_id: @managed_app.id,
+          hostname: @managed_app.default_route.hostname,
+          event: "request_started",
+          request_method: "GET",
+          path: "/docs",
+          status_code: 200,
+          cold_start: "false"
+        }
+      end
 
       assert_response :success
       assert_equal "recorded", response.parsed_body.fetch("status")
@@ -114,6 +118,23 @@ module Internal
       event = @managed_app.app_events.order(:created_at).last
       assert_equal "gateway.activity_reported", event.event_type
       assert_equal "/docs", event.metadata.fetch("path")
+      metric = @managed_app.app_request_metrics.last
+      assert_equal 200, metric.status_code
+      assert_equal "GET", metric.request_method
+      assert_not metric.cold_start?
+    end
+
+    test "wake endpoint records a cold request metric" do
+      assert_difference -> { @managed_app.app_request_metrics.cold_starts.count }, 1 do
+        post "/internal/gateway/wake", params: {
+          app_id: @managed_app.id,
+          request_method: "GET",
+          path: "/"
+        }
+      end
+
+      assert_response :accepted
+      assert_equal "/", @managed_app.app_request_metrics.last.path
     end
 
     test "activity endpoint records request finish without negative counters" do

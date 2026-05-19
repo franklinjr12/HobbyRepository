@@ -15,6 +15,8 @@ module RuntimeAgent
       deployment = app.current_deployment
       return failure(:missing_deployment, "App has no current deployment") unless deployment
 
+      wake_started_at = Time.current
+      wake_started_monotonic = monotonic_time
       runtime_instance = app.runtime_instances.create!(status: "starting")
       app.record_runtime_environment_prepared!
       app.manual_override_to!("waking", reason: "runtime agent start")
@@ -22,10 +24,19 @@ module RuntimeAgent
       verify_image!(deployment.image_reference)
       container_name = container_name_for(app, deployment, runtime_instance)
       command = start_command(app, deployment, runtime_instance, container_name)
+      container_start_started_at = monotonic_time
       result = run(command)
+      container_start_duration_ms = elapsed_ms(container_start_started_at)
 
       unless result.success?
-        mark_start_failed(app, runtime_instance, result)
+        mark_start_failed(
+          app,
+          runtime_instance,
+          result,
+          wake_started_at: wake_started_at,
+          total_wake_duration_ms: elapsed_ms(wake_started_monotonic),
+          container_start_duration_ms: container_start_duration_ms
+        )
         return command_failure(:start_failed, "Container start failed", command, result)
       end
 
@@ -41,7 +52,14 @@ module RuntimeAgent
         metadata: start_metadata(app, runtime_instance, container_name, deployment)
       )
 
-      readiness = wait_for_readiness!(app, deployment, runtime_instance)
+      readiness = wait_for_readiness!(
+        app,
+        deployment,
+        runtime_instance,
+        wake_started_at: wake_started_at,
+        wake_started_monotonic: wake_started_monotonic,
+        container_start_duration_ms: container_start_duration_ms
+      )
       return readiness unless readiness.success?
 
       Result.success(
@@ -51,7 +69,16 @@ module RuntimeAgent
         status: runtime_instance.status
       )
     rescue RuntimeAgent::Failure => failure
-      mark_start_failed(app, runtime_instance, failure.error) if runtime_instance
+      if runtime_instance
+        mark_start_failed(
+          app,
+          runtime_instance,
+          failure.error,
+          wake_started_at: wake_started_at,
+          total_wake_duration_ms: elapsed_ms(wake_started_monotonic),
+          container_start_duration_ms: nil
+        )
+      end
       Result.failure(failure.error)
     end
 
@@ -110,6 +137,7 @@ module RuntimeAgent
       inspection = JSON.parse(result.stdout).first
       state = inspection.fetch("State", {})
       sync_inspection!(app, runtime_instance, state)
+      capture_runtime_metrics(app, runtime_instance, state)
       collect_runtime_logs(app, runtime_instance)
 
       Result.success(
@@ -282,7 +310,8 @@ module RuntimeAgent
       result.success? && result.stdout.strip == PLATFORM_LABEL_VALUE
     end
 
-    def wait_for_readiness!(app, deployment, runtime_instance)
+    def wait_for_readiness!(app, deployment, runtime_instance, wake_started_at:, wake_started_monotonic:,
+                            container_start_duration_ms:)
       app.record_event!(
         "health_check.started",
         "Readiness check started for #{app.name}",
@@ -296,10 +325,24 @@ module RuntimeAgent
       )
 
       if result.success?
-        mark_health_check_succeeded(app, runtime_instance, result)
+        mark_health_check_succeeded(
+          app,
+          runtime_instance,
+          result,
+          wake_started_at: wake_started_at,
+          total_wake_duration_ms: elapsed_ms(wake_started_monotonic),
+          container_start_duration_ms: container_start_duration_ms
+        )
         Result.success(command: "health_check", runtime_instance_id: runtime_instance.id)
       else
-        mark_health_check_failed(app, runtime_instance, result)
+        mark_health_check_failed(
+          app,
+          runtime_instance,
+          result,
+          wake_started_at: wake_started_at,
+          total_wake_duration_ms: elapsed_ms(wake_started_monotonic),
+          container_start_duration_ms: container_start_duration_ms
+        )
         failure(:health_check_failed, result.error_message, details: health_check_result_metadata(result))
       end
     end
@@ -308,9 +351,19 @@ module RuntimeAgent
       runner.call(command)
     end
 
-    def mark_start_failed(app, runtime_instance, failure)
+    def mark_start_failed(app, runtime_instance, failure, wake_started_at:, total_wake_duration_ms:,
+                          container_start_duration_ms:)
       message = failure.respond_to?(:message) ? failure.message : failure.stderr.presence || "Container start failed"
       runtime_instance.update!(status: "crashed", failure_message: message, stopped_at: Time.current)
+      record_cold_start_metric!(
+        app,
+        runtime_instance,
+        status: "failed",
+        wake_started_at: wake_started_at,
+        total_wake_duration_ms: total_wake_duration_ms,
+        container_start_duration_ms: container_start_duration_ms,
+        failure_message: message
+      )
       app.manual_override_to!("wake_failed", reason: "runtime agent start failed")
       app.record_event!(
         "runtime.start_failed",
@@ -319,7 +372,8 @@ module RuntimeAgent
       )
     end
 
-    def mark_health_check_succeeded(app, runtime_instance, result)
+    def mark_health_check_succeeded(app, runtime_instance, result, wake_started_at:, total_wake_duration_ms:,
+                                    container_start_duration_ms:)
       runtime_instance.update!(
         status: "running",
         last_seen_at: Time.current,
@@ -329,6 +383,15 @@ module RuntimeAgent
         health_check_status_code: result.status_code,
         health_check_checked_at: Time.current
       )
+      record_cold_start_metric!(
+        app,
+        runtime_instance,
+        status: "succeeded",
+        wake_started_at: wake_started_at,
+        total_wake_duration_ms: total_wake_duration_ms,
+        container_start_duration_ms: container_start_duration_ms,
+        health_check_duration_ms: result.duration_ms
+      )
       app.manual_override_to!("running", reason: "runtime health check passed")
       app.record_event!(
         "health_check.succeeded",
@@ -337,7 +400,8 @@ module RuntimeAgent
       )
     end
 
-    def mark_health_check_failed(app, runtime_instance, result)
+    def mark_health_check_failed(app, runtime_instance, result, wake_started_at:, total_wake_duration_ms:,
+                                 container_start_duration_ms:)
       runtime_instance.update!(
         status: "crashed",
         failure_message: result.error_message,
@@ -346,6 +410,16 @@ module RuntimeAgent
         health_check_result: "failure",
         health_check_status_code: result.status_code,
         health_check_checked_at: Time.current
+      )
+      record_cold_start_metric!(
+        app,
+        runtime_instance,
+        status: "failed",
+        wake_started_at: wake_started_at,
+        total_wake_duration_ms: total_wake_duration_ms,
+        container_start_duration_ms: container_start_duration_ms,
+        health_check_duration_ms: result.duration_ms,
+        failure_message: result.error_message
       )
       collect_runtime_logs(app, runtime_instance)
       app.manual_override_to!("wake_failed", reason: "runtime health check failed")
@@ -405,6 +479,81 @@ module RuntimeAgent
       return if runtime_instance&.container_id.blank?
 
       get_logs(app)
+    end
+
+    def capture_runtime_metrics(app, runtime_instance, state)
+      return unless state["Running"]
+
+      result = run([ "docker", "stats", "--no-stream", "--format", "{{ json . }}", runtime_instance.container_id ])
+      return unless result.success?
+
+      payload = JSON.parse(result.stdout)
+      runtime_instance.runtime_metric_snapshots.create!(
+        app: app,
+        captured_at: Time.current,
+        memory_usage_bytes: parse_memory_usage(payload["MemUsage"]),
+        cpu_usage_percent: parse_percentage(payload["CPUPerc"]),
+        uptime_seconds: runtime_uptime_seconds(runtime_instance)
+      )
+    rescue JSON::ParserError, ActiveRecord::RecordInvalid
+      app.record_event!(
+        "runtime.metrics_failed",
+        "Runtime metrics could not be captured for #{app.name}",
+        metadata: { runtime_instance_id: runtime_instance.id }
+      )
+    end
+
+    def record_cold_start_metric!(app, runtime_instance, status:, wake_started_at:, total_wake_duration_ms:,
+                                  container_start_duration_ms: nil, health_check_duration_ms: nil,
+                                  failure_message: nil)
+      app.cold_start_metrics.create!(
+        runtime_instance: runtime_instance,
+        started_at: wake_started_at,
+        finished_at: Time.current,
+        status: status,
+        container_start_duration_ms: container_start_duration_ms,
+        health_check_duration_ms: health_check_duration_ms,
+        total_wake_duration_ms: total_wake_duration_ms,
+        failure_message: failure_message
+      )
+    end
+
+    def parse_percentage(value)
+      value.to_s.delete("%").presence&.to_d
+    end
+
+    def parse_memory_usage(value)
+      used_memory = value.to_s.split("/").first.to_s.strip
+      number, unit = used_memory.match(/\A([\d.]+)\s*([A-Za-z]+)?\z/)&.captures
+      return if number.blank?
+
+      (number.to_d * memory_unit_multiplier(unit)).round
+    end
+
+    def memory_unit_multiplier(unit)
+      {
+        "b" => 1,
+        "kb" => 1_000,
+        "mb" => 1_000_000,
+        "gb" => 1_000_000_000,
+        "kib" => 1024,
+        "mib" => 1024**2,
+        "gib" => 1024**3
+      }.fetch(unit.to_s.downcase, 1)
+    end
+
+    def runtime_uptime_seconds(runtime_instance)
+      return unless runtime_instance.started_at
+
+      (Time.current - runtime_instance.started_at).round
+    end
+
+    def monotonic_time
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    def elapsed_ms(started_at)
+      ((monotonic_time - started_at) * 1000).round
     end
 
     def command_failure(code, message, command, result)

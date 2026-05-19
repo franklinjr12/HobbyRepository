@@ -144,6 +144,28 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
       container_id: "abc123",
       failure_message: "boot failed"
     )
+    app.app_request_metrics.create!(
+      occurred_at: 1.minute.ago,
+      status_code: 200,
+      request_method: "GET",
+      path: "/",
+      cold_start: true
+    )
+    app.cold_start_metrics.create!(
+      runtime_instance: app.runtime_instances.last,
+      started_at: 2.minutes.ago,
+      finished_at: 1.minute.ago,
+      status: "succeeded",
+      total_wake_duration_ms: 1_200,
+      health_check_duration_ms: 300
+    )
+    app.runtime_metric_snapshots.create!(
+      runtime_instance: app.runtime_instances.last,
+      captured_at: 30.seconds.ago,
+      memory_usage_bytes: 12_582_912,
+      cpu_usage_percent: 2.5,
+      uptime_seconds: 90
+    )
     app.app_logs.create!(
       runtime_instance: app.runtime_instances.last,
       deployment: app.current_deployment,
@@ -158,7 +180,11 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h2", text: "Configuration"
     assert_select "h2", text: "Runtime Instance"
+    assert_select "h2", text: "Request Metrics"
+    assert_select "h2", text: "Runtime Metrics"
+    assert_select "h2", text: "Cold Starts"
     assert_select "dt", text: "Health check result"
+    assert_select "dt", text: "Memory usage"
     assert_select "h2", text: "Routes"
     assert_select "form[action='#{inspect_runtime_app_path(app)}']"
     assert_select "a[href='#{app_app_logs_path(app)}']", text: "Logs"

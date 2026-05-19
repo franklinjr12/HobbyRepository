@@ -181,6 +181,9 @@ class AppsController < ApplicationController
     @routes = @app.routes.order(active: :desc, hostname: :asc)
     @environment_variables = @app.environment_variables.ordered
     @database_backups = @app.database_resource&.database_backups&.recent || DatabaseBackup.none
+    @request_metrics = @app.app_request_metrics.recent(5)
+    @runtime_metrics = @app.runtime_metric_snapshots.recent(5)
+    @cold_start_metrics = @app.cold_start_metrics.recent(5)
   end
 
   def sync_volume_from_params(app)

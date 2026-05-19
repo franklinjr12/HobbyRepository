@@ -88,6 +88,8 @@ module RuntimeAgent
       assert_equal 3000, runtime_instance.internal_port
       assert_equal "success", runtime_instance.health_check_result
       assert_equal 204, runtime_instance.health_check_status_code
+      assert_equal "succeeded", @app.cold_start_metrics.last.status
+      assert_equal 125, @app.cold_start_metrics.last.health_check_duration_ms
       assert_includes run_command, "--expose"
       assert_includes run_command, "3000"
       assert_includes run_command, "--env"
@@ -130,6 +132,8 @@ module RuntimeAgent
       assert_equal "crashed", runtime_instance.status
       assert_equal "failure", runtime_instance.health_check_result
       assert_equal 503, runtime_instance.health_check_status_code
+      assert_equal "failed", @app.cold_start_metrics.last.status
+      assert_equal 30_000, @app.cold_start_metrics.last.health_check_duration_ms
       assert_match "Health check GET /", runtime_instance.failure_message
       assert_includes @app.app_events.pluck(:event_type), "health_check.failed"
     end
@@ -147,6 +151,7 @@ module RuntimeAgent
       assert_equal "start_failed", result.error.code
       assert_equal "wake_failed", @app.reload.status
       assert_equal "crashed", @app.runtime_instances.order(:created_at).last.status
+      assert_equal "failed", @app.cold_start_metrics.last.status
       assert_includes @app.app_events.pluck(:event_type), "runtime.start_failed"
     end
 
@@ -196,6 +201,31 @@ module RuntimeAgent
       assert_equal "running", @app.reload.status
       assert_equal "running", runtime_instance.reload.status
       assert_nil runtime_instance.stopped_at
+    end
+
+    test "inspect captures runtime memory cpu and uptime snapshots" do
+      @app.update!(status: "waking")
+      runtime_instance = @app.runtime_instances.create!(
+        status: "starting",
+        container_id: "container-123",
+        started_at: 2.minutes.ago
+      )
+      runner = FakeRunner.new([
+        FakeRunner.success([ { State: { Running: true, ExitCode: 0 } } ].to_json),
+        FakeRunner.success({ MemUsage: "12.5MiB / 1GiB", CPUPerc: "3.25%" }.to_json)
+      ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      assert_difference -> { runtime_instance.runtime_metric_snapshots.count }, 1 do
+        result = agent.inspect_app(@app)
+
+        assert result.success?
+      end
+
+      snapshot = runtime_instance.runtime_metric_snapshots.last
+      assert_equal 13_107_200, snapshot.memory_usage_bytes
+      assert_equal BigDecimal("3.25"), snapshot.cpu_usage_percent
+      assert snapshot.uptime_seconds >= 120
     end
 
     test "inspect marks missing containers so apps are not falsely running" do

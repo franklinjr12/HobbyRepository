@@ -36,6 +36,16 @@
       <h2>Runtime</h2>
       <p><%= @runtime_instance&.status || "No runtime instance" %></p>
     </article>
+    <article>
+      <span class="status-dot"></span>
+      <h2>Traffic</h2>
+      <p><%= pluralize(@app.request_count, "request") %>, <%= pluralize(@app.cold_start_count, "cold start") %></p>
+    </article>
+    <article>
+      <span class="status-dot"></span>
+      <h2>Wake Time</h2>
+      <p><%= @app.average_wake_duration_ms ? "#{@app.average_wake_duration_ms} ms average" : "No wake data yet" %></p>
+    </article>
   </section>
 
   <section class="detail-grid">
@@ -205,9 +215,77 @@
           <dd><%= @runtime_instance.health_check_status_code.presence || "None" %></dd>
           <dt>Health checked</dt>
           <dd><%= @runtime_instance.health_check_checked_at || "Never" %></dd>
+          <% if @runtime_instance.latest_metric_snapshot %>
+            <dt>Memory usage</dt>
+            <dd><%= number_to_human_size(@runtime_instance.latest_metric_snapshot.memory_usage_bytes) %></dd>
+            <dt>CPU usage</dt>
+            <dd><%= number_with_precision(@runtime_instance.latest_metric_snapshot.cpu_usage_percent, precision: 2) %>%</dd>
+            <dt>Uptime</dt>
+            <dd><%= pluralize(@runtime_instance.latest_metric_snapshot.uptime_seconds, "second") %></dd>
+          <% end %>
         </dl>
       <% else %>
         <p>No runtime instance has been recorded.</p>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Request Metrics</h2>
+      <dl>
+        <dt>Total requests</dt>
+        <dd><%= @app.request_count %></dd>
+        <dt>Cold starts</dt>
+        <dd><%= @app.cold_start_count %></dd>
+        <dt>Average wake</dt>
+        <dd><%= @app.average_wake_duration_ms ? "#{@app.average_wake_duration_ms} ms" : "No successful wakes" %></dd>
+      </dl>
+      <% if @request_metrics.any? %>
+        <ol class="event-list metric-list">
+          <% @request_metrics.each do |metric| %>
+            <li>
+              <strong><%= metric.cold_start? ? "Cold request" : "Warm request" %></strong>
+              <span><%= [ metric.request_method, metric.path, metric.status_code ].compact.join(" ") %></span>
+              <small><%= metric.occurred_at.to_fs(:short) %></small>
+            </li>
+          <% end %>
+        </ol>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Runtime Metrics</h2>
+      <% if @runtime_metrics.any? %>
+        <ol class="event-list metric-list">
+          <% @runtime_metrics.each do |metric| %>
+            <li>
+              <strong><%= number_to_human_size(metric.memory_usage_bytes) %></strong>
+              <span><%= number_with_precision(metric.cpu_usage_percent, precision: 2) %>% CPU, <%= pluralize(metric.uptime_seconds, "second") %> uptime</span>
+              <small><%= metric.captured_at.to_fs(:short) %></small>
+            </li>
+          <% end %>
+        </ol>
+      <% else %>
+        <p>No runtime snapshots have been captured.</p>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Cold Starts</h2>
+      <% if @cold_start_metrics.any? %>
+        <ol class="event-list metric-list">
+          <% @cold_start_metrics.each do |metric| %>
+            <li>
+              <strong><%= metric.status.humanize %></strong>
+              <span><%= metric.total_wake_duration_ms %> ms total, <%= metric.health_check_duration_ms || 0 %> ms readiness</span>
+              <small><%= metric.started_at.to_fs(:short) %></small>
+              <% if metric.failure_message.present? %>
+                <small><%= metric.failure_message %></small>
+              <% end %>
+            </li>
+          <% end %>
+        </ol>
+      <% else %>
+        <p>No cold start history has been recorded.</p>
       <% end %>
     </article>
 

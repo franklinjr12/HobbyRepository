@@ -49,9 +49,13 @@ module Internal
           hostname: hostname_param,
           event: activity_event,
           method: params[:request_method],
-          path: params[:path]
+          path: params[:path],
+          status_code: status_code_param,
+          cold_start: cold_start_param,
+          wake_duration_ms: wake_duration_ms_param
         }.compact
       )
+      record_request_metric(app)
 
       render json: {
         status: "recorded",
@@ -159,6 +163,11 @@ module Internal
           should_enqueue = false
         elsif WAKEABLE_STATUSES.include?(app.status)
           app.manual_override_to!("waking", reason: "gateway wake request")
+          app.record_request_metric!(
+            cold_start: true,
+            request_method: params.permit(:request_method)[:request_method],
+            path: params.permit(:path)[:path]
+          )
           app.record_event!(
             "gateway.wake_requested",
             "Gateway requested wake for #{app.name}",
@@ -193,6 +202,40 @@ module Internal
 
     def connection_activity?
       ActiveModel::Type::Boolean.new.cast(params.permit(:connection)[:connection])
+    end
+
+    def record_request_metric(app)
+      return unless metric_recordable_event?
+
+      app.record_request_metric!(
+        status_code: status_code_param,
+        cold_start: cold_start_param,
+        wake_duration_ms: wake_duration_ms_param,
+        request_method: params.permit(:request_method)[:request_method],
+        path: params.permit(:path)[:path]
+      )
+    end
+
+    def metric_recordable_event?
+      activity_event != "request_finished" || status_code_param.present?
+    end
+
+    def status_code_param
+      value = params.permit(:status_code)[:status_code]
+      return unless value.to_s.match?(/\A\d+\z/)
+
+      value.to_i
+    end
+
+    def cold_start_param
+      ActiveModel::Type::Boolean.new.cast(params.permit(:cold_start)[:cold_start])
+    end
+
+    def wake_duration_ms_param
+      value = params.permit(:wake_duration_ms)[:wake_duration_ms]
+      return unless value.to_s.match?(/\A\d+\z/)
+
+      value.to_i
     end
 
     def internal_target_payload(runtime_instance)

@@ -75,6 +75,43 @@ def ensure_app_log!(app, runtime_instance:, stream:, logged_at:, message:)
   log.save!
 end
 
+def ensure_request_metric!(app, occurred_at:, status_code:, cold_start:, request_method:, path:, wake_duration_ms: nil)
+  app.app_request_metrics.find_or_create_by!(
+    occurred_at: occurred_at,
+    status_code: status_code,
+    cold_start: cold_start,
+    request_method: request_method,
+    path: path
+  ) do |metric|
+    metric.wake_duration_ms = wake_duration_ms
+  end
+end
+
+def ensure_cold_start_metric!(app, runtime_instance:, started_at:, finished_at:, status:, total_wake_duration_ms:,
+                              container_start_duration_ms:, health_check_duration_ms:, failure_message: nil)
+  app.cold_start_metrics.find_or_create_by!(
+    runtime_instance: runtime_instance,
+    started_at: started_at,
+    status: status
+  ) do |metric|
+    metric.finished_at = finished_at
+    metric.total_wake_duration_ms = total_wake_duration_ms
+    metric.container_start_duration_ms = container_start_duration_ms
+    metric.health_check_duration_ms = health_check_duration_ms
+    metric.failure_message = failure_message
+  end
+end
+
+def ensure_runtime_metric_snapshot!(app, runtime_instance:, captured_at:, memory_usage_bytes:, cpu_usage_percent:,
+                                    uptime_seconds:)
+  runtime_instance.runtime_metric_snapshots.find_or_create_by!(captured_at: captured_at) do |metric|
+    metric.app = app
+    metric.memory_usage_bytes = memory_usage_bytes
+    metric.cpu_usage_percent = cpu_usage_percent
+    metric.uptime_seconds = uptime_seconds
+  end
+end
+
 def ensure_current_deployment!(app, image_reference:, port:, health_check_path:, status: "deployed")
   deployment = app.deployments.find_or_initialize_by(image_reference: image_reference, port: port)
   deployment.assign_attributes(
@@ -205,6 +242,41 @@ ensure_app_log!(
   logged_at: 2.minutes.ago,
   message: "GET / 200 3ms"
 )
+ensure_request_metric!(
+  running_app,
+  occurred_at: 2.minutes.ago,
+  status_code: 200,
+  cold_start: false,
+  request_method: "GET",
+  path: "/"
+)
+ensure_request_metric!(
+  running_app,
+  occurred_at: 11.minutes.ago,
+  status_code: 200,
+  cold_start: true,
+  request_method: "GET",
+  path: "/",
+  wake_duration_ms: 1_480
+)
+ensure_cold_start_metric!(
+  running_app,
+  runtime_instance: running_runtime,
+  started_at: 12.minutes.ago,
+  finished_at: 11.minutes.ago,
+  status: "succeeded",
+  total_wake_duration_ms: 1_480,
+  container_start_duration_ms: 420,
+  health_check_duration_ms: 1_060
+)
+ensure_runtime_metric_snapshot!(
+  running_app,
+  runtime_instance: running_runtime,
+  captured_at: 1.minute.ago,
+  memory_usage_bytes: 18_874_368,
+  cpu_usage_percent: 1.75,
+  uptime_seconds: 660
+)
 ensure_event!(
   running_app,
   event_type: "runtime.start_succeeded",
@@ -266,6 +338,26 @@ ensure_event!(
     health_check_path: failed_app.health_check_path,
     startup_timeout_seconds: failed_app.startup_timeout_seconds
   }
+)
+ensure_request_metric!(
+  failed_app,
+  occurred_at: 1.hour.ago,
+  status_code: 503,
+  cold_start: true,
+  request_method: "GET",
+  path: "/ready",
+  wake_duration_ms: 10_000
+)
+ensure_cold_start_metric!(
+  failed_app,
+  runtime_instance: failed_runtime,
+  started_at: 1.hour.ago,
+  finished_at: 59.minutes.ago,
+  status: "failed",
+  total_wake_duration_ms: 10_000,
+  container_start_duration_ms: 350,
+  health_check_duration_ms: 9_650,
+  failure_message: failed_runtime.failure_message
 )
 
 draft_app = ensure_demo_app!(

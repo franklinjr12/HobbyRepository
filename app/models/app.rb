@@ -54,6 +54,9 @@ class App < ApplicationRecord
   has_many :routes, dependent: :restrict_with_error
   has_many :app_events, dependent: :destroy
   has_many :app_logs, dependent: :destroy
+  has_many :app_request_metrics, dependent: :destroy
+  has_many :runtime_metric_snapshots, dependent: :destroy
+  has_many :cold_start_metrics, dependent: :destroy
   has_many :environment_variables, dependent: :destroy
   has_one :volume, dependent: :restrict_with_error
   has_one :database_resource, dependent: :restrict_with_error
@@ -238,6 +241,30 @@ class App < ApplicationRecord
 
   def record_request_activity!(at: Time.current)
     update!(last_request_at: at, last_activity_at: at)
+  end
+
+  def record_request_metric!(status_code: nil, cold_start: false, wake_duration_ms: nil,
+                             request_method: nil, path: nil, at: Time.current)
+    app_request_metrics.create!(
+      occurred_at: at,
+      status_code: status_code,
+      cold_start: cold_start,
+      wake_duration_ms: wake_duration_ms,
+      request_method: request_method,
+      path: path
+    )
+  end
+
+  def request_count
+    app_request_metrics.count
+  end
+
+  def cold_start_count
+    app_request_metrics.cold_starts.count
+  end
+
+  def average_wake_duration_ms
+    cold_start_metrics.succeeded.average(:total_wake_duration_ms)&.round
   end
 
   def active_runtime_activity?

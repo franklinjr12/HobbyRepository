@@ -237,4 +237,30 @@ class AppTest < ActiveSupport::TestCase
     assert_equal "running", app.reload.status
     assert_equal "sleep.cancelled", app.app_events.order(:created_at).last.event_type
   end
+
+  test "summarizes persisted request and wake metrics" do
+    app = App.create!(name: "Metric App", slug: "metric-app", owner: @owner, node: @node)
+    runtime_instance = app.runtime_instances.create!(status: "stopped", container_id: "metric-container")
+
+    app.record_request_metric!(status_code: 200, cold_start: false, request_method: "GET", path: "/")
+    app.record_request_metric!(status_code: 503, cold_start: true, wake_duration_ms: 1_250)
+    app.cold_start_metrics.create!(
+      runtime_instance: runtime_instance,
+      started_at: 2.minutes.ago,
+      finished_at: 1.minute.ago,
+      status: "succeeded",
+      total_wake_duration_ms: 1_000
+    )
+    app.cold_start_metrics.create!(
+      runtime_instance: runtime_instance,
+      started_at: 4.minutes.ago,
+      finished_at: 3.minutes.ago,
+      status: "succeeded",
+      total_wake_duration_ms: 2_000
+    )
+
+    assert_equal 2, app.request_count
+    assert_equal 1, app.cold_start_count
+    assert_equal 1_500, app.average_wake_duration_ms
+  end
 end

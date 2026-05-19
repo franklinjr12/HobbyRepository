@@ -232,6 +232,10 @@ h1 {
   gap: 4px;
 }
 
+.metric-list {
+  margin-top: 16px;
+}
+
 .event-list span,
 .event-list small,
 dd,

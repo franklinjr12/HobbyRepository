@@ -5,6 +5,8 @@ class RuntimeInstance < ApplicationRecord
   belongs_to :node
   belongs_to :deployment, optional: true
   has_many :app_logs, dependent: :destroy
+  has_many :runtime_metric_snapshots, dependent: :destroy
+  has_many :cold_start_metrics, dependent: :destroy
 
   before_validation :assign_node_from_app
   before_validation :assign_deployment_from_app
@@ -22,6 +24,10 @@ class RuntimeInstance < ApplicationRecord
 
   def log_label
     container_id.presence || "Runtime ##{id}"
+  end
+
+  def latest_metric_snapshot
+    runtime_metric_snapshots.order(captured_at: :desc).first
   end
 
   private
