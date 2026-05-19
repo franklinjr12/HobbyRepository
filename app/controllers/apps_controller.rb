@@ -51,8 +51,13 @@ class AppsController < ApplicationController
   end
 
   def sleep
-    result = runtime_agent.stop_app(@app)
-    return redirect_to @app, notice: "Stop requested." if result.success?
+    result = AppSleeper.new(runtime_agent: runtime_agent).sleep(
+      @app,
+      requested_by: current_user.email,
+      trigger: "manual_dashboard",
+      force: true
+    )
+    return redirect_to @app, notice: "Sleep requested." if result.success?
 
     redirect_to @app, alert: result.error.message
   rescue ActiveRecord::RecordInvalid, ArgumentError => error

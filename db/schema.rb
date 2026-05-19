@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_19_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_19_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -27,14 +27,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_120000) do
   end
 
   create_table "apps", force: :cascade do |t|
+    t.integer "active_connection_count", default: 0, null: false
+    t.integer "active_request_count", default: 0, null: false
     t.decimal "cpu_limit", precision: 6, scale: 2
     t.datetime "created_at", null: false
+    t.datetime "drain_started_at"
     t.string "health_check_kind", default: "http", null: false
     t.string "health_check_path", default: "/"
     t.integer "idle_timeout_seconds", default: 900, null: false
     t.string "image_reference"
     t.integer "internal_port"
     t.datetime "last_activity_at"
+    t.datetime "last_request_at"
     t.bigint "memory_limit_bytes"
     t.string "name", null: false
     t.bigint "node_id", null: false
@@ -43,6 +47,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_120000) do
     t.integer "startup_timeout_seconds", default: 60, null: false
     t.string "status", default: "created", null: false
     t.datetime "updated_at", null: false
+    t.index ["drain_started_at"], name: "index_apps_on_drain_started_at"
+    t.index ["last_request_at"], name: "index_apps_on_last_request_at"
     t.index ["node_id"], name: "index_apps_on_node_id"
     t.index ["owner_id"], name: "index_apps_on_owner_id"
     t.index ["slug"], name: "index_apps_on_slug", unique: true

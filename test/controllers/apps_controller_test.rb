@@ -191,12 +191,15 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "waking", app.reload.status
     assert_equal "runtime.start_succeeded", app.app_events.order(:created_at).last.event_type
 
+    app.manual_override_to!("running", reason: "test running before manual sleep")
+    app.runtime_instances.create!(status: "running", container_id: "manual-container")
+
     with_runtime_agent(FakeRuntimeAgent.new) do
       post sleep_app_path(app)
     end
     assert_redirected_to app_path(app)
-    assert_equal "stopped", app.reload.status
-    assert_equal "runtime.stop_succeeded", app.app_events.order(:created_at).last.event_type
+    assert_equal "sleeping", app.reload.status
+    assert_equal "sleep.succeeded", app.app_events.order(:created_at).last.event_type
   end
 
   test "manual wake shows normalized runtime failures" do

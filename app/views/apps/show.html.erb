@@ -9,7 +9,7 @@
     <div class="inline-actions">
       <%= link_to "Settings", edit_app_path(@app), class: "button secondary" %>
       <%= button_to "Wake", wake_app_path(@app), method: :post, class: "button" %>
-      <%= button_to "Sleep", sleep_app_path(@app), method: :post, class: "button secondary" %>
+      <%= button_to "Sleep", sleep_app_path(@app), method: :post, class: "button secondary", form: { data: { turbo_confirm: "Put this app to sleep now?" } } %>
       <%= button_to "Inspect", inspect_runtime_app_path(@app), method: :post, class: "button secondary" %>
       <%= link_to "All apps", apps_path, class: "button secondary" %>
     </div>
@@ -49,6 +49,12 @@
         <dd><%= @app.health_check_kind.humanize %><%= " #{@app.health_check_path}" if @app.health_check_path.present? %></dd>
         <dt>Idle timeout</dt>
         <dd><%= pluralize(@app.idle_timeout_seconds, "second") %></dd>
+        <dt>Last request</dt>
+        <dd><%= @app.last_request_at || "No traffic yet" %></dd>
+        <dt>Active requests</dt>
+        <dd><%= @app.active_request_count %></dd>
+        <dt>Active connections</dt>
+        <dd><%= @app.active_connection_count %></dd>
         <dt>Startup timeout</dt>
         <dd><%= pluralize(@app.startup_timeout_seconds, "second") %></dd>
         <dt>Memory limit</dt>

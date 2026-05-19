@@ -60,6 +60,7 @@ module Internal
       assert_equal "running", body.fetch("status")
       assert_equal "http://172.18.0.10:3000", body.fetch("internal_target").fetch("url")
       assert @managed_app.reload.last_activity_at.present?
+      assert @managed_app.last_request_at.present?
     end
 
     test "wake endpoint accepts app id, creates event, and enqueues one wake job" do
@@ -101,6 +102,7 @@ module Internal
       post "/internal/gateway/activity", params: {
         app_id: @managed_app.id,
         hostname: @managed_app.default_route.hostname,
+        event: "request_started",
         request_method: "GET",
         path: "/docs"
       }
@@ -108,9 +110,24 @@ module Internal
       assert_response :success
       assert_equal "recorded", response.parsed_body.fetch("status")
       assert @managed_app.reload.last_activity_at.present?
+      assert_equal 1, @managed_app.active_request_count
       event = @managed_app.app_events.order(:created_at).last
       assert_equal "gateway.activity_reported", event.event_type
       assert_equal "/docs", event.metadata.fetch("path")
+    end
+
+    test "activity endpoint records request finish without negative counters" do
+      @managed_app.update!(active_request_count: 1, active_connection_count: 1)
+
+      post "/internal/gateway/activity", params: {
+        app_id: @managed_app.id,
+        event: "request_finished",
+        connection: true
+      }
+
+      assert_response :success
+      assert_equal 0, @managed_app.reload.active_request_count
+      assert_equal 0, @managed_app.active_connection_count
     end
   end
 end

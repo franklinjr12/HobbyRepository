@@ -132,4 +132,52 @@ class AppTest < ActiveSupport::TestCase
     assert_equal [ "API_TOKEN" ], event.metadata.fetch("keys")
     assert_no_match "secret-token", event.metadata.to_json
   end
+
+  test "tracks active request and connection activity" do
+    app = App.create!(name: "Active App", slug: "active-app", owner: @owner, node: @node, status: "sleeping")
+    app.manual_override_to!("running", reason: "test active runtime")
+
+    app.record_request_started!(connection: true)
+
+    assert_equal 1, app.reload.active_request_count
+    assert_equal 1, app.active_connection_count
+    assert app.last_request_at.present?
+    assert app.active_runtime_activity?
+
+    app.record_request_finished!(connection: true)
+
+    assert_equal 0, app.reload.active_request_count
+    assert_equal 0, app.active_connection_count
+  end
+
+  test "idle sleep is due only for inactive running apps past timeout" do
+    app = App.create!(
+      name: "Idle App",
+      slug: "idle-app",
+      owner: @owner,
+      node: @node,
+      status: "sleeping",
+      idle_timeout_seconds: 300,
+      last_request_at: 10.minutes.ago
+    )
+    app.manual_override_to!("running", reason: "test running idle app")
+
+    assert app.idle_sleep_due?
+
+    app.update!(active_request_count: 1)
+
+    assert_not app.idle_sleep_due?
+    assert app.idle_timeout_reached?
+  end
+
+  test "new request cancels draining sleep decision" do
+    app = App.create!(name: "Draining App", slug: "draining-app", owner: @owner, node: @node, status: "sleeping")
+    app.manual_override_to!("running", reason: "test running app")
+    app.begin_sleep_drain!(requested_by: "platform", trigger: "idle_timeout")
+
+    app.record_request_started!
+
+    assert_equal "running", app.reload.status
+    assert_equal "sleep.cancelled", app.app_events.order(:created_at).last.event_type
+  end
 end

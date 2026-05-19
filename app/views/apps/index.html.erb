@@ -35,7 +35,8 @@
               <% end %>
             </td>
             <td><%= app.current_deployment&.image_reference || "No deployment" %></td>
-            <td><%= app.last_activity_at ? time_ago_in_words(app.last_activity_at) + " ago" : "No traffic yet" %></td>
+            <% last_activity = app.last_request_at || app.last_activity_at %>
+            <td><%= last_activity ? time_ago_in_words(last_activity) + " ago" : "No traffic yet" %></td>
             <td>
               <div class="inline-actions">
                 <%= link_to "Open", app, class: "button secondary compact" %>

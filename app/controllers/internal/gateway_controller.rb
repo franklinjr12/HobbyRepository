@@ -13,7 +13,7 @@ module Internal
       runtime_instance = latest_running_runtime(app)
 
       if app.status == "running" && runtime_instance&.internal_target_ready?
-        app.update!(last_activity_at: Time.current)
+        app.record_request_activity!
         render json: resolution_payload(app, route, runtime_instance)
       else
         render json: wake_required_payload(app, route), status: :accepted
@@ -41,12 +41,13 @@ module Internal
       app = resolve_app
       return render_unknown_hostname unless app
 
-      app.update!(last_activity_at: Time.current)
+      activity_result = record_activity(app)
       app.record_event!(
         "gateway.activity_reported",
         "Gateway reported traffic for #{app.name}",
         metadata: {
           hostname: hostname_param,
+          event: activity_event,
           method: params[:request_method],
           path: params[:path]
         }.compact
@@ -55,7 +56,11 @@ module Internal
       render json: {
         status: "recorded",
         app_id: app.id,
-        last_activity_at: app.last_activity_at.iso8601
+        last_activity_at: app.last_activity_at.iso8601,
+        last_request_at: app.last_request_at&.iso8601,
+        active_request_count: app.active_request_count,
+        active_connection_count: app.active_connection_count,
+        sleep_cancelled: activity_result == :sleep_cancelled
       }
     end
 
@@ -165,6 +170,29 @@ module Internal
 
       WakeAppJob.perform_later(app.id) if should_enqueue
       should_enqueue
+    end
+
+    def record_activity(app)
+      was_draining = app.status == "draining"
+
+      case activity_event
+      when "request_started"
+        app.record_request_started!(connection: connection_activity?)
+      when "request_finished"
+        app.record_request_finished!(connection: connection_activity?)
+      else
+        app.record_request_activity!
+      end
+
+      was_draining && app.reload.status == "running" ? :sleep_cancelled : :recorded
+    end
+
+    def activity_event
+      params.permit(:event)[:event].presence || "request"
+    end
+
+    def connection_activity?
+      ActiveModel::Type::Boolean.new.cast(params.permit(:connection)[:connection])
     end
 
     def internal_target_payload(runtime_instance)

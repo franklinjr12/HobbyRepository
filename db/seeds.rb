@@ -93,6 +93,7 @@ sleepy_app = ensure_demo_app!(
   memory_limit_bytes: 134_217_728,
   cpu_limit: 0.25,
   last_activity_at: 35.minutes.ago,
+  last_request_at: 35.minutes.ago,
   status: "sleeping"
 )
 ensure_environment_variable!(sleepy_app, key: "APP_ENV", value: "demo")
@@ -123,6 +124,7 @@ running_app = ensure_demo_app!(
   memory_limit_bytes: 67_108_864,
   cpu_limit: 0.2,
   last_activity_at: 2.minutes.ago,
+  last_request_at: 2.minutes.ago,
   status: "running"
 )
 ensure_environment_variable!(running_app, key: "REGION", value: "local")
@@ -167,6 +169,7 @@ failed_app = ensure_demo_app!(
   memory_limit_bytes: 134_217_728,
   cpu_limit: 0.25,
   last_activity_at: 1.hour.ago,
+  last_request_at: 1.hour.ago,
   status: "wake_failed"
 )
 ensure_environment_variable!(failed_app, key: "EXPECTED_HEALTH_PATH", value: "/ready")

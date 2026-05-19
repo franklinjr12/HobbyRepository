@@ -3,6 +3,7 @@ class App < ApplicationRecord
   DEFAULT_STARTUP_TIMEOUT_SECONDS = 60
   DEFAULT_HEALTH_CHECK_PATH = "/".freeze
   DEFAULT_HEALTH_CHECK_KIND = "http".freeze
+  DEFAULT_DRAIN_TIMEOUT_SECONDS = 30
 
   HEALTH_CHECK_KINDS = %w[http port].freeze
 
@@ -81,6 +82,9 @@ class App < ApplicationRecord
   validates :cpu_limit, numericality: { greater_than: 0 }, allow_nil: true
   validate :status_transition_must_be_valid, if: :will_save_change_to_status?
 
+  scope :running, -> { where(status: "running") }
+  scope :draining, -> { where(status: "draining") }
+
   def may_transition_to?(next_status)
     self.class.valid_transition?(status, next_status)
   end
@@ -149,6 +153,89 @@ class App < ApplicationRecord
     )
   end
 
+  def record_request_started!(connection: false, at: Time.current)
+    with_lock do
+      next_active_connection_count = active_connection_count + (connection ? 1 : 0)
+      update!(
+        active_request_count: active_request_count + 1,
+        active_connection_count: next_active_connection_count,
+        last_request_at: at,
+        last_activity_at: at
+      )
+
+      if status == "draining"
+        manual_override_to!("running", reason: "new traffic cancelled sleep drain")
+        record_event!(
+          "sleep.cancelled",
+          "Sleep was cancelled for #{name} because new traffic arrived",
+          metadata: active_activity_metadata
+        )
+      end
+    end
+  end
+
+  def record_request_finished!(connection: false, at: Time.current)
+    with_lock do
+      decrement_counter_safely!(:active_request_count)
+      decrement_counter_safely!(:active_connection_count) if connection
+      update!(last_activity_at: at)
+    end
+  end
+
+  def record_request_activity!(at: Time.current)
+    update!(last_request_at: at, last_activity_at: at)
+  end
+
+  def active_runtime_activity?
+    active_request_count.positive? || active_connection_count.positive?
+  end
+
+  def idle_sleep_due?(now: Time.current)
+    return false unless idle_timeout_reached?(now: now)
+    return false if active_runtime_activity?
+
+    true
+  end
+
+  def idle_timeout_reached?(now: Time.current)
+    return false unless status == "running"
+
+    last_activity = last_request_at || last_activity_at || updated_at
+    last_activity <= idle_timeout_seconds.seconds.ago(now)
+  end
+
+  def begin_sleep_drain!(requested_by:, trigger:, at: Time.current, force: false, wait_for_activity: false)
+    return false if !force && !wait_for_activity && active_runtime_activity?
+
+    manual_override_to!("draining", reason: "#{trigger} sleep requested")
+    update!(drain_started_at: at)
+    record_event!(
+      "sleep.started",
+      "Sleep started for #{name}",
+      metadata: active_activity_metadata.merge(
+        requested_by: requested_by,
+        trigger: trigger,
+        forced: force,
+        waiting_for_activity: wait_for_activity
+      )
+    )
+    true
+  end
+
+  def mark_sleep_succeeded!(requested_by:, trigger:)
+    manual_override_to!("sleeping", reason: "#{trigger} sleep completed")
+    update!(drain_started_at: nil, active_request_count: 0, active_connection_count: 0)
+    record_event!(
+      "sleep.succeeded",
+      "#{name} is sleeping",
+      metadata: { requested_by: requested_by, trigger: trigger }
+    )
+  end
+
+  def drain_timeout_expired?(now: Time.current)
+    drain_started_at.present? && drain_started_at <= DEFAULT_DRAIN_TIMEOUT_SECONDS.seconds.ago(now)
+  end
+
   def http_health_check?
     health_check_kind == "http"
   end
@@ -165,6 +252,8 @@ class App < ApplicationRecord
     self.health_check_path = nil if port_health_check?
     self.idle_timeout_seconds ||= DEFAULT_IDLE_TIMEOUT_SECONDS
     self.startup_timeout_seconds ||= DEFAULT_STARTUP_TIMEOUT_SECONDS
+    self.active_request_count ||= 0
+    self.active_connection_count ||= 0
   end
 
   def assign_local_node
@@ -203,5 +292,19 @@ class App < ApplicationRecord
         node_id: node_id
       }
     )
+  end
+
+  def decrement_counter_safely!(attribute)
+    current_value = public_send(attribute).to_i
+    update!(attribute => [ current_value - 1, 0 ].max)
+  end
+
+  def active_activity_metadata
+    {
+      active_request_count: active_request_count,
+      active_connection_count: active_connection_count,
+      last_request_at: last_request_at&.iso8601,
+      idle_timeout_seconds: idle_timeout_seconds
+    }.compact
   end
 end

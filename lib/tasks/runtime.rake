@@ -10,4 +10,10 @@ namespace :runtime do
       exit 1
     end
   end
+
+  desc "Enqueue idle sleep checks for running apps"
+  task idle_sleep: :environment do
+    IdleSleepJob.perform_later
+    puts "Idle sleep check enqueued."
+  end
 end
