@@ -73,5 +73,20 @@
     </div>
   <% end %>
 
+  <div class="settings-section">
+    <strong>Persistent storage</strong>
+    <p>Mount a platform-managed host directory into the container for data that should survive sleep and wake cycles.</p>
+
+    <label class="checkbox-row">
+      <%= form.check_box :volume_enabled, checked: app.storage_volume_enabled? %>
+      Enable persistent volume
+    </label>
+
+    <div>
+      <%= form.label :volume_mount_path, "Container mount path" %>
+      <%= form.text_field :volume_mount_path, value: app.volume&.mount_path || app.volume_mount_path || Volume::DEFAULT_MOUNT_PATH %>
+    </div>
+  </div>
+
   <%= form.submit app.persisted? ? "Save settings" : "Create app" %>
 <% end %>

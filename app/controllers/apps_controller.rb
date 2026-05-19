@@ -32,6 +32,7 @@ class AppsController < ApplicationController
     previous_deployment_config = deployment_config_for(@app)
 
     if @app.update(app_params)
+      sync_volume_from_params(@app)
       create_replacement_deployment(@app) if deployment_config_changed?(previous_deployment_config, @app)
       @app.record_event!("app.updated", "#{@app.name} settings were updated", metadata: changed_settings_metadata)
       redirect_to @app, notice: "App settings updated."
@@ -91,6 +92,8 @@ class AppsController < ApplicationController
       startup_timeout_seconds
       memory_limit_bytes
       cpu_limit
+      volume_enabled
+      volume_mount_path
     ])
   end
 
@@ -143,6 +146,24 @@ class AppsController < ApplicationController
     @runtime_instance = @app.runtime_instances.order(created_at: :desc).first
     @routes = @app.routes.order(active: :desc, hostname: :asc)
     @environment_variables = @app.environment_variables.ordered
+  end
+
+  def sync_volume_from_params(app)
+    if app.volume_requested?
+      app.ensure_volume!(mount_path: app.volume_mount_path)
+      app.record_event!(
+        "volume.created",
+        "Persistent volume was configured for #{app.name}",
+        metadata: app.volume.metadata
+      )
+    elsif app.volume&.active?
+      app.volume.update!(status: "disabled")
+      app.record_event!(
+        "volume.disabled",
+        "Persistent volume was disabled for #{app.name}",
+        metadata: app.volume.metadata
+      )
+    end
   end
 
   def runtime_agent

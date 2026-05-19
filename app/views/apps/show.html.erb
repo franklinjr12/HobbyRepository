@@ -115,6 +115,24 @@
     </article>
 
     <article>
+      <h2>Persistent Storage</h2>
+      <% if @app.volume %>
+        <dl>
+          <dt>Status</dt>
+          <dd><%= @app.volume.status.humanize %></dd>
+          <dt>Mount path</dt>
+          <dd><code><%= @app.volume.mount_path %></code></dd>
+          <dt>Host path</dt>
+          <dd><code><%= @app.volume.host_path %></code></dd>
+          <dt>Size limit</dt>
+          <dd><%= @app.volume.size_limit_bytes.presence || "No limit configured" %></dd>
+        </dl>
+      <% else %>
+        <p>No persistent volume configured.</p>
+      <% end %>
+    </article>
+
+    <article>
       <h2>Runtime Instance</h2>
       <% if @runtime_instance %>
         <dl>

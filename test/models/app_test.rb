@@ -21,6 +21,34 @@ class AppTest < ActiveSupport::TestCase
     assert_equal [ "app.created" ], app.app_events.pluck(:event_type)
   end
 
+  test "creates a requested persistent volume after app creation" do
+    app = App.create!(
+      name: "Stored App",
+      slug: "stored-app",
+      owner: @owner,
+      volume_enabled: "1",
+      volume_mount_path: "/var/app/data"
+    )
+
+    assert_equal "/var/app/data", app.volume.mount_path
+    assert Dir.exist?(app.volume.host_path)
+    assert_includes app.app_events.pluck(:event_type), "volume.created"
+  end
+
+  test "validates requested persistent volume mount path before creation" do
+    app = App.new(
+      name: "Bad Volume",
+      slug: "bad-volume",
+      owner: @owner,
+      node: @node,
+      volume_enabled: "1",
+      volume_mount_path: "relative"
+    )
+
+    assert_not app.valid?
+    assert_includes app.errors[:volume_mount_path], "must start with /"
+  end
+
   test "allows port readiness without a health check path" do
     app = App.create!(
       name: "Port Ready",

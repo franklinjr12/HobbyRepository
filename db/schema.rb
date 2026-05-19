@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_19_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_19_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -147,6 +147,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_130000) do
     t.index ["email"], name: "index_users_on_email", unique: true
   end
 
+  create_table "volumes", force: :cascade do |t|
+    t.bigint "app_id", null: false
+    t.datetime "created_at", null: false
+    t.string "host_path", null: false
+    t.string "mount_path", null: false
+    t.bigint "size_limit_bytes"
+    t.string "status", default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.index ["app_id"], name: "index_volumes_on_app_id", unique: true
+    t.index ["host_path"], name: "index_volumes_on_host_path", unique: true
+    t.index ["status"], name: "index_volumes_on_status"
+  end
+
   add_foreign_key "app_events", "apps"
   add_foreign_key "apps", "nodes"
   add_foreign_key "apps", "users", column: "owner_id"
@@ -156,4 +169,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_130000) do
   add_foreign_key "runtime_instances", "apps"
   add_foreign_key "runtime_instances", "deployments"
   add_foreign_key "runtime_instances", "nodes"
+  add_foreign_key "volumes", "apps"
 end

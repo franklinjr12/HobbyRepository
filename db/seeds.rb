@@ -24,6 +24,16 @@ def ensure_environment_variable!(app, key:, value:, secret: false)
   variable.save!
 end
 
+def ensure_volume!(app, mount_path: Volume::DEFAULT_MOUNT_PATH)
+  app.ensure_volume!(mount_path: mount_path)
+  ensure_event!(
+    app,
+    event_type: "volume.created",
+    message: "Persistent volume was configured for #{app.name}",
+    metadata: app.volume.metadata
+  )
+end
+
 def ensure_event!(app, event_type:, message:, metadata: {})
   app.app_events.find_or_create_by!(event_type: event_type, message: message) do |event|
     event.metadata = metadata
@@ -98,6 +108,7 @@ sleepy_app = ensure_demo_app!(
 )
 ensure_environment_variable!(sleepy_app, key: "APP_ENV", value: "demo")
 ensure_environment_variable!(sleepy_app, key: "CACHE_MODE", value: "ephemeral")
+ensure_volume!(sleepy_app, mount_path: "/usr/share/nginx/html/data")
 ensure_current_deployment!(
   sleepy_app,
   image_reference: "nginx:alpine",
@@ -217,6 +228,7 @@ draft_app = ensure_demo_app!(
 )
 ensure_environment_variable!(draft_app, key: "RAILS_ENV", value: "production")
 ensure_environment_variable!(draft_app, key: "DATABASE_URL", value: "postgres://demo:demo@db/private_tool", secret: true)
+ensure_volume!(draft_app, mount_path: "/app/storage")
 ensure_event!(
   draft_app,
   event_type: "app.review_needed",

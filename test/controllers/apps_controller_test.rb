@@ -42,16 +42,20 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_difference -> { App.count }, 1 do
       assert_difference -> { Route.count }, 1 do
         assert_difference -> { Deployment.count }, 1 do
-          post apps_path, params: {
-            app: {
-              name: "Tiny Service",
-              image_reference: "example/tiny:latest",
-              internal_port: 3000,
-              idle_timeout_seconds: 900,
-              health_check_kind: "http",
-              health_check_path: "/up"
+          assert_difference -> { Volume.count }, 1 do
+            post apps_path, params: {
+              app: {
+                name: "Tiny Service",
+                image_reference: "example/tiny:latest",
+                internal_port: 3000,
+                idle_timeout_seconds: 900,
+                health_check_kind: "http",
+                health_check_path: "/up",
+                volume_enabled: "1",
+                volume_mount_path: "/data"
+              }
             }
-          }
+          end
         end
       end
     end
@@ -62,7 +66,8 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "example/tiny:latest", app.current_deployment.image_reference
     assert_equal "http", app.current_deployment.health_check_kind
     assert_equal "/up", app.current_deployment.health_check_path
-    assert_equal %w[app.created deployment.created], app.app_events.order(:created_at).pluck(:event_type)
+    assert_equal "/data", app.volume.mount_path
+    assert_equal %w[volume.created app.created deployment.created], app.app_events.order(:created_at).pluck(:event_type)
   end
 
   test "index shows owned app management details" do
@@ -126,6 +131,18 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_select "body", text: /super-secret/, count: 0
   end
 
+  test "show includes persistent storage details" do
+    app = @user.apps.create!(name: "Storage App", image_reference: "example/storage:latest", internal_port: 3000)
+    app.create_volume!(mount_path: "/app/data")
+
+    get app_path(app)
+
+    assert_response :success
+    assert_select "h2", text: "Persistent Storage"
+    assert_select "dt", text: "Mount path"
+    assert_select "code", text: "/app/data"
+  end
+
   test "settings update can create replacement deployment" do
     app = @user.apps.create!(
       name: "Editable App",
@@ -149,7 +166,9 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
           idle_timeout_seconds: 120,
           startup_timeout_seconds: 30,
           memory_limit_bytes: 268_435_456,
-          cpu_limit: 0.5
+          cpu_limit: 0.5,
+          volume_enabled: "1",
+          volume_mount_path: "/cache"
         }
       }
     end
@@ -160,8 +179,30 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 4000, app.current_deployment.port
     assert_equal "port", app.current_deployment.health_check_kind
     assert_nil app.current_deployment.health_check_path
+    assert_equal "/cache", app.volume.mount_path
     assert_not original_deployment.reload.current?
     assert_includes app.app_events.order(:created_at).pluck(:event_type), "app.updated"
+  end
+
+  test "settings update can disable an active volume mount" do
+    app = @user.apps.create!(name: "Disable Storage", image_reference: "example/app:latest", internal_port: 3000)
+    app.create_volume!(mount_path: "/data")
+
+    patch app_path(app), params: {
+      app: {
+        name: "Disable Storage",
+        image_reference: "example/app:latest",
+        internal_port: 3000,
+        health_check_path: "/",
+        idle_timeout_seconds: 900,
+        volume_enabled: "0",
+        volume_mount_path: "/data"
+      }
+    }
+
+    assert_redirected_to app_path(app)
+    assert_equal "disabled", app.volume.reload.status
+    assert_includes app.app_events.order(:created_at).pluck(:event_type), "volume.disabled"
   end
 
   test "settings update rejects invalid runtime configuration" do

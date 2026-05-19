@@ -38,7 +38,7 @@ module RuntimeAgent
       app.record_event!(
         "runtime.start_succeeded",
         "Container start requested for #{app.name}",
-        metadata: start_metadata(runtime_instance, container_name, deployment)
+        metadata: start_metadata(app, runtime_instance, container_name, deployment)
       )
 
       readiness = wait_for_readiness!(app, deployment, runtime_instance)
@@ -192,6 +192,7 @@ module RuntimeAgent
       command = %w[docker run --detach --name] + [ container_name ]
       command += label_args(app, deployment, runtime_instance)
       command += env_args(app.runtime_environment)
+      command += volume_args(app)
       command += [ "--expose", deployment.port.to_s ]
       command << "--memory=#{app.memory_limit_bytes}" if app.memory_limit_bytes.present?
       command << "--cpus=#{app.cpu_limit}" if app.cpu_limit.present?
@@ -210,6 +211,19 @@ module RuntimeAgent
 
     def env_args(environment)
       environment.flat_map { |key, value| [ "--env", "#{key}=#{value}" ] }
+    end
+
+    def volume_args(app)
+      volume = app.active_volume
+      return [] unless volume
+
+      volume.ensure_host_directory!
+      app.record_event!(
+        "volume.mounted",
+        "Persistent volume mounted for #{app.name}",
+        metadata: volume.metadata
+      )
+      [ "--volume", volume.runtime_mount ]
     end
 
     def sync_inspection!(app, runtime_instance, state)
@@ -341,7 +355,7 @@ module RuntimeAgent
       }
     end
 
-    def start_metadata(runtime_instance, container_name, deployment)
+    def start_metadata(app, runtime_instance, container_name, deployment)
       {
         runtime_instance_id: runtime_instance.id,
         container_id: runtime_instance.container_id,
@@ -350,7 +364,9 @@ module RuntimeAgent
         image_reference: deployment.image_reference,
         port: deployment.port,
         health_check_kind: deployment.health_check_kind,
-        health_check_path: deployment.health_check_path
+        health_check_path: deployment.health_check_path,
+        volume_id: app.active_volume&.id,
+        volume_mount_path: app.active_volume&.mount_path
       }
     end
 

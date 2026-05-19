@@ -60,6 +60,7 @@ module RuntimeAgent
         current: true
       )
       @app.environment_variables.create!(key: "RAILS_ENV", value: "production")
+      @app.create_volume!(mount_path: "/app/data")
     end
 
     test "starts an app container through one normalized command boundary" do
@@ -90,10 +91,13 @@ module RuntimeAgent
       assert_includes run_command, "3000"
       assert_includes run_command, "--env"
       assert_includes run_command, "RAILS_ENV=production"
+      assert_includes run_command, "--volume"
+      assert_includes run_command, "#{@app.volume.host_path}:/app/data"
       assert_includes run_command, "--memory=134217728"
       assert_includes run_command, "--cpus=0.5"
       assert_includes run_command, "#{LABEL_APP_ID}=#{@app.id}"
       assert_includes @app.app_events.pluck(:event_type), "runtime.start_succeeded"
+      assert_includes @app.app_events.pluck(:event_type), "volume.mounted"
       assert_includes @app.app_events.pluck(:event_type), "health_check.started"
       assert_includes @app.app_events.pluck(:event_type), "health_check.succeeded"
     end

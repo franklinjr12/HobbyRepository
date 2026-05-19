@@ -24,5 +24,8 @@
 
 /public/assets
 
+# Ignore platform-managed local app volume data.
+/storage/app_volumes/*
+
 # Ignore key files for decrypting credentials and more.
 /config/*.key

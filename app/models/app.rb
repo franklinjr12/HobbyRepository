@@ -44,6 +44,7 @@ class App < ApplicationRecord
   }.freeze
 
   attr_accessor :manual_status_override_reason, :restoring_after_platform_restart
+  attr_accessor :volume_enabled, :volume_mount_path
 
   belongs_to :owner, class_name: "User", inverse_of: :apps
   belongs_to :node
@@ -52,11 +53,13 @@ class App < ApplicationRecord
   has_many :routes, dependent: :restrict_with_error
   has_many :app_events, dependent: :destroy
   has_many :environment_variables, dependent: :destroy
+  has_one :volume, dependent: :restrict_with_error
 
   before_validation :assign_local_node, on: :create
   before_validation :normalize_slug
   before_validation :assign_defaults
   after_create :create_default_route
+  after_create :create_requested_volume
   after_create :record_creation_event
 
   validates :name, :slug, :status, presence: true
@@ -81,6 +84,7 @@ class App < ApplicationRecord
                                  allow_nil: true
   validates :cpu_limit, numericality: { greater_than: 0 }, allow_nil: true
   validate :status_transition_must_be_valid, if: :will_save_change_to_status?
+  validate :requested_volume_mount_path_must_be_valid, if: :volume_requested?
 
   scope :running, -> { where(status: "running") }
   scope :draining, -> { where(status: "draining") }
@@ -143,6 +147,31 @@ class App < ApplicationRecord
       secret_count: variables.count(&:secret?),
       keys: variables.map(&:key)
     }
+  end
+
+  def storage_volume_enabled?
+    volume_requested? || volume&.active?
+  end
+
+  def active_volume
+    volume if volume&.active?
+  end
+
+  def volume_requested?
+    ActiveModel::Type::Boolean.new.cast(volume_enabled)
+  end
+
+  def ensure_volume!(mount_path: nil)
+    selected_mount_path = mount_path.presence || volume_mount_path.presence || Volume::DEFAULT_MOUNT_PATH
+
+    transaction do
+      if volume
+        volume.update!(mount_path: selected_mount_path, status: "active")
+        volume.ensure_host_directory!
+      else
+        create_volume!(mount_path: selected_mount_path)
+      end
+    end
   end
 
   def record_runtime_environment_prepared!
@@ -294,6 +323,17 @@ class App < ApplicationRecord
     )
   end
 
+  def create_requested_volume
+    return unless volume_requested?
+
+    ensure_volume!(mount_path: volume_mount_path)
+    record_event!(
+      "volume.created",
+      "Persistent volume was created for #{name}",
+      metadata: volume.metadata
+    )
+  end
+
   def decrement_counter_safely!(attribute)
     current_value = public_send(attribute).to_i
     update!(attribute => [ current_value - 1, 0 ].max)
@@ -306,5 +346,12 @@ class App < ApplicationRecord
       last_request_at: last_request_at&.iso8601,
       idle_timeout_seconds: idle_timeout_seconds
     }.compact
+  end
+
+  def requested_volume_mount_path_must_be_valid
+    candidate = Volume.new(mount_path: volume_mount_path.presence || Volume::DEFAULT_MOUNT_PATH, host_path: "placeholder")
+    return if candidate.valid?
+
+    candidate.errors[:mount_path].each { |message| errors.add(:volume_mount_path, message) }
   end
 end
