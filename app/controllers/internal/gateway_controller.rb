@@ -2,6 +2,8 @@ module Internal
   class GatewayController < ActionController::API
     RETRY_AFTER_SECONDS = 3
     WAKEABLE_STATUSES = %w[created sleeping stopped crashed unhealthy wake_failed].freeze
+    FAILED_STATUSES = %w[crashed unhealthy wake_failed].freeze
+    FAILURE_STATUS = :bad_gateway
 
     before_action :authenticate_gateway!
 
@@ -15,8 +17,10 @@ module Internal
       if app.status == "running" && runtime_instance&.internal_target_ready?
         app.record_request_activity!
         render json: resolution_payload(app, route, runtime_instance)
+      elsif failed_app?(app)
+        render_app_failed(app)
       else
-        render json: wake_required_payload(app, route), status: :accepted
+        render_wake_required(app, route)
       end
     end
 
@@ -27,14 +31,18 @@ module Internal
       wake_was_enqueued = request_wake(app)
       app.reload
 
-      render json: wake_status_payload(app, wake_was_enqueued: wake_was_enqueued), status: :accepted
+      render_wake_status(app, wake_was_enqueued: wake_was_enqueued, status: :accepted)
     end
 
     def wake_status
       app = resolve_app
       return render_unknown_hostname unless app
 
-      render json: wake_status_payload(app)
+      if failed_app?(app)
+        render_app_failed(app)
+      else
+        render_wake_status(app)
+      end
     end
 
     def activity
@@ -73,7 +81,10 @@ module Internal
     def authenticate_gateway!
       expected_token = ENV["GATEWAY_SHARED_SECRET"]
       return if expected_token.blank? && !Rails.env.production?
-      return render(json: { status: "unauthorized" }, status: :unauthorized) if expected_token.blank?
+
+      if expected_token.blank?
+        return render(json: { status: "unauthorized" }, status: :unauthorized)
+      end
 
       token = request.authorization.to_s.delete_prefix("Bearer ").presence
       return if ActiveSupport::SecurityUtils.secure_compare(token.to_s, expected_token.to_s)
@@ -96,10 +107,44 @@ module Internal
     end
 
     def render_unknown_hostname
-      render json: {
-        status: "not_found",
-        hostname: hostname_param
-      }, status: :not_found
+      if html_request?
+        render_failure_page(
+          title: "App not found",
+          heading: "App not found",
+          message: "This hostname is not attached to an app on this platform.",
+          detail: "Check the address and try again.",
+          status: :not_found
+        )
+      else
+        render json: {
+          status: "not_found"
+        }, status: :not_found
+      end
+    end
+
+    def render_wake_required(app, route)
+      response.set_header("Retry-After", RETRY_AFTER_SECONDS.to_s)
+      render json: wake_required_payload(app, route), status: :accepted
+    end
+
+    def render_wake_status(app, wake_was_enqueued: false, status: :ok)
+      response.set_header("Retry-After", RETRY_AFTER_SECONDS.to_s) unless app.status == "running"
+      render json: wake_status_payload(app, wake_was_enqueued: wake_was_enqueued), status: status
+    end
+
+    def render_app_failed(app)
+      if html_request?
+        render_failure_page(
+          title: "App unavailable",
+          heading: "App unavailable",
+          message: app_unavailable_message(app),
+          detail: "Reason: #{failure_reason_label(failure_reason_for(app))}.",
+          dashboard_path: owner_dashboard_path(app),
+          status: FAILURE_STATUS
+        )
+      else
+        render json: failed_app_payload(app), status: FAILURE_STATUS
+      end
     end
 
     def latest_running_runtime(app)
@@ -132,6 +177,8 @@ module Internal
     end
 
     def wake_status_payload(app, wake_was_enqueued: false)
+      return failed_app_payload(app).merge(wake_enqueued: wake_was_enqueued) if failed_app?(app)
+
       {
         status: wake_status_for(app),
         app_id: app.id,
@@ -147,6 +194,90 @@ module Internal
       return "failed" if app.status == "wake_failed"
 
       "wake_required"
+    end
+
+    def failed_app_payload(app)
+      {
+        status: "failed",
+        app_id: app.id,
+        app_status: app.status,
+        reason: failure_reason_for(app)
+      }
+    end
+
+    def failed_app?(app)
+      FAILED_STATUSES.include?(app.status)
+    end
+
+    def failure_reason_for(app)
+      latest_event = app.app_events.order(created_at: :desc).find do |event|
+        event.event_type.in?(%w[runtime.start_failed health_check.failed])
+      end
+      latest_runtime = app.runtime_instances.order(created_at: :desc).first
+      latest_metric = app.cold_start_metrics.failed.order(started_at: :desc).first
+      failure_text = [
+        app.status,
+        latest_event&.event_type,
+        latest_event&.metadata,
+        latest_runtime&.status,
+        latest_runtime&.failure_message,
+        latest_runtime&.health_check_result,
+        latest_metric&.failure_message
+      ].compact.join(" ").downcase
+
+      if failure_text.match?(/image_(unavailable|pull)|could not be pulled/)
+        return "image_pull_failed"
+      end
+
+      return "timeout" if failure_text.match?(/timeout|timed out|before timing out/)
+      return "health_check_failed" if failure_text.match?(/health_check|health check|readiness/)
+      return "container_crashed" if failure_text.match?(/crash|start_failed|container start failed/)
+
+      "container_crashed"
+    end
+
+    def failure_reason_label(reason)
+      {
+        "image_pull_failed" => "Image pull failed",
+        "container_crashed" => "Container crashed",
+        "health_check_failed" => "Health check failed",
+        "timeout" => "Timeout"
+      }.fetch(reason, "App failed")
+    end
+
+    def app_unavailable_message(app)
+      "#{app.name} could not be started."
+    end
+
+    def owner_dashboard_path(app)
+      return unless owner_authenticated?(app)
+
+      Rails.application.routes.url_helpers.app_path(app)
+    end
+
+    def owner_authenticated?(app)
+      session[:user_id].present? && session[:user_id].to_i == app.owner_id
+    rescue StandardError
+      false
+    end
+
+    def html_request?
+      request.headers["Accept"].to_s.include?("text/html")
+    end
+
+    def render_failure_page(title:, heading:, message:, detail:, status:, dashboard_path: nil)
+      html = ApplicationController.render(
+        template: "internal/gateway/failure",
+        layout: false,
+        locals: {
+          title: title,
+          heading: heading,
+          message: message,
+          detail: detail,
+          dashboard_path: dashboard_path
+        }
+      )
+      render body: html, content_type: "text/html", status: status
     end
 
     def retry_after_for(app)

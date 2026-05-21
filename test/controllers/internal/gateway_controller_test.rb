@@ -16,7 +16,11 @@ module Internal
         internal_port: 3000,
         status: "sleeping"
       )
-      @managed_app.deployments.create!(image_reference: "example/gateway:latest", port: 3000, current: true)
+      @managed_app.deployments.create!(
+        image_reference: "example/gateway:latest",
+        port: 3000,
+        current: true
+      )
       clear_enqueued_jobs
       clear_performed_jobs
     end
@@ -26,17 +30,40 @@ module Internal
       clear_performed_jobs
     end
 
+    def gateway_get(path, params: {})
+      get path, params: params, headers: { "Accept" => "application/json" }
+    end
+
+    def gateway_post(path, params: {})
+      post path, params: params, headers: { "Accept" => "application/json" }
+    end
+
     test "resolves unknown hostnames with safe not found response" do
-      get "/internal/gateway/resolve", params: { hostname: "missing.example.test" }
+      gateway_get "/internal/gateway/resolve", params: { hostname: "missing.example.test" }
 
       assert_response :not_found
       assert_equal "not_found", response.parsed_body.fetch("status")
+      assert_not_includes response.body, "Gateway App"
+    end
+
+    test "renders generic platform page for browser unknown hostnames" do
+      get "/internal/gateway/resolve",
+          params: { hostname: "missing.example.test" },
+          headers: { "Accept" => "text/html" }
+
+      assert_response :not_found
+      assert_includes response.media_type, "text/html"
+      assert_select "h1", text: "App not found"
+      assert_select "body", text: /missing.example.test/, count: 0
+      assert_select "body", text: /Gateway App/, count: 0
     end
 
     test "identifies sleeping apps as wake required" do
-      get "/internal/gateway/resolve", params: { hostname: @managed_app.default_route.hostname }
+      gateway_get "/internal/gateway/resolve",
+                  params: { hostname: @managed_app.default_route.hostname }
 
       assert_response :accepted
+      assert_equal "3", response.headers["Retry-After"]
       body = response.parsed_body
       assert_equal "wake_required", body.fetch("status")
       assert_equal @managed_app.id, body.fetch("app_id")
@@ -53,7 +80,8 @@ module Internal
         internal_port: 3000
       )
 
-      get "/internal/gateway/resolve", params: { hostname: @managed_app.default_route.hostname }
+      gateway_get "/internal/gateway/resolve",
+                  params: { hostname: @managed_app.default_route.hostname }
 
       assert_response :success
       body = response.parsed_body
@@ -63,24 +91,99 @@ module Internal
       assert @managed_app.last_request_at.present?
     end
 
+    test "resolve returns api friendly failure for failed apps" do
+      @managed_app.manual_override_to!("wake_failed", reason: "test failed wake")
+      runtime_instance = @managed_app.runtime_instances.create!(
+        status: "crashed",
+        container_id: "container-500",
+        failure_message: "Health check GET / timed out."
+      )
+      @managed_app.cold_start_metrics.create!(
+        runtime_instance: runtime_instance,
+        started_at: 1.minute.ago,
+        finished_at: Time.current,
+        status: "failed",
+        total_wake_duration_ms: 60_000,
+        failure_message: runtime_instance.failure_message
+      )
+
+      gateway_get "/internal/gateway/resolve",
+                  params: { hostname: @managed_app.default_route.hostname }
+
+      assert_response :bad_gateway
+      body = response.parsed_body
+      assert_equal "failed", body.fetch("status")
+      assert_equal "timeout", body.fetch("reason")
+      assert_equal "wake_failed", body.fetch("app_status")
+      assert_not_includes response.body, runtime_instance.failure_message
+    end
+
+    test "resolve renders friendly wake failure page for browser users" do
+      @managed_app.manual_override_to!("wake_failed", reason: "test failed wake")
+      @managed_app.runtime_instances.create!(
+        status: "crashed",
+        container_id: "container-500",
+        failure_message: "secret boot trace"
+      )
+
+      get "/internal/gateway/resolve",
+          params: { hostname: @managed_app.default_route.hostname },
+          headers: { "Accept" => "text/html" }
+
+      assert_response :bad_gateway
+      assert_select "h1", text: "App unavailable"
+      assert_select "p", text: /Gateway App/
+      assert_select "p", text: /Container crashed/
+      assert_select "body", text: /secret boot trace/, count: 0
+    end
+
+    test "failure page links owner to dashboard when signed in" do
+      @managed_app.manual_override_to!("wake_failed", reason: "test failed wake")
+      post sign_in_path, params: { email: @owner.email, password: "password123" }
+
+      get "/internal/gateway/resolve",
+          params: { hostname: @managed_app.default_route.hostname },
+          headers: { "Accept" => "text/html" }
+
+      assert_response :bad_gateway
+      assert_select "a[href='#{app_path(@managed_app)}']", text: "Open dashboard"
+    end
+
+    test "waking apps return retry after without html for json clients" do
+      @managed_app.manual_override_to!("waking", reason: "test waking app")
+
+      gateway_get "/internal/gateway/resolve",
+                  params: { hostname: @managed_app.default_route.hostname }
+
+      assert_response :accepted
+      assert_equal "application/json", response.media_type
+      assert_equal "3", response.headers["Retry-After"]
+      assert_equal "wake_required", response.parsed_body.fetch("status")
+    end
+
     test "wake endpoint accepts app id, creates event, and enqueues one wake job" do
       assert_enqueued_with(job: WakeAppJob, args: [ @managed_app.id ]) do
-        post "/internal/gateway/wake", params: { app_id: @managed_app.id }
+        gateway_post "/internal/gateway/wake", params: { app_id: @managed_app.id }
       end
 
       assert_response :accepted
+      assert_equal "3", response.headers["Retry-After"]
       body = response.parsed_body
       assert_equal "waking", body.fetch("status")
       assert_equal true, body.fetch("wake_enqueued")
       assert_equal "waking", @managed_app.reload.status
-      assert_equal "gateway.wake_requested", @managed_app.app_events.order(:created_at).last.event_type
+      assert_equal(
+        "gateway.wake_requested",
+        @managed_app.app_events.order(:created_at).last.event_type
+      )
     end
 
     test "wake endpoint does not enqueue duplicates while wake is in progress" do
       @managed_app.manual_override_to!("waking", reason: "test wake already in progress")
 
       assert_no_enqueued_jobs do
-        post "/internal/gateway/wake", params: { hostname: @managed_app.default_route.hostname }
+        gateway_post "/internal/gateway/wake",
+                     params: { hostname: @managed_app.default_route.hostname }
       end
 
       assert_response :accepted
@@ -92,15 +195,35 @@ module Internal
     test "wake status can be polled" do
       @managed_app.manual_override_to!("waking", reason: "test wake status")
 
-      get "/internal/gateway/wake_status", params: { hostname: @managed_app.default_route.hostname }
+      gateway_get "/internal/gateway/wake_status",
+                  params: { hostname: @managed_app.default_route.hostname }
 
       assert_response :success
       assert_equal "waking", response.parsed_body.fetch("status")
+      assert_equal "3", response.headers["Retry-After"]
+    end
+
+    test "wake status reports failed apps with broad reason" do
+      @managed_app.manual_override_to!("wake_failed", reason: "test failed wake")
+      @managed_app.record_event!(
+        "runtime.start_failed",
+        "Container start failed",
+        metadata: { error: { code: "image_unavailable", message: "private registry secret" } }
+      )
+
+      gateway_get "/internal/gateway/wake_status",
+                  params: { hostname: @managed_app.default_route.hostname }
+
+      assert_response :bad_gateway
+      body = response.parsed_body
+      assert_equal "failed", body.fetch("status")
+      assert_equal "image_pull_failed", body.fetch("reason")
+      assert_not_includes response.body, "private registry secret"
     end
 
     test "activity endpoint records last activity and event metadata" do
       assert_difference -> { @managed_app.app_request_metrics.count }, 1 do
-        post "/internal/gateway/activity", params: {
+        gateway_post "/internal/gateway/activity", params: {
           app_id: @managed_app.id,
           hostname: @managed_app.default_route.hostname,
           event: "request_started",
@@ -126,7 +249,7 @@ module Internal
 
     test "wake endpoint records a cold request metric" do
       assert_difference -> { @managed_app.app_request_metrics.cold_starts.count }, 1 do
-        post "/internal/gateway/wake", params: {
+        gateway_post "/internal/gateway/wake", params: {
           app_id: @managed_app.id,
           request_method: "GET",
           path: "/"
@@ -140,7 +263,7 @@ module Internal
     test "activity endpoint records request finish without negative counters" do
       @managed_app.update!(active_request_count: 1, active_connection_count: 1)
 
-      post "/internal/gateway/activity", params: {
+      gateway_post "/internal/gateway/activity", params: {
         app_id: @managed_app.id,
         event: "request_finished",
         connection: true
