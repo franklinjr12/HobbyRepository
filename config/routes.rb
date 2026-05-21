@@ -14,6 +14,8 @@ Rails.application.routes.draw do
     member do
       post :wake
       post :sleep
+      post :deploy
+      post :rollback
       post :inspect_runtime
       post :provision_database
       post :rotate_database_credentials

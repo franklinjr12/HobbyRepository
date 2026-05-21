@@ -79,15 +79,62 @@
       <h2>Current Deployment</h2>
       <% if @app.current_deployment %>
         <dl>
+          <dt>Status</dt>
+          <dd><%= @app.current_deployment.status.humanize %></dd>
           <dt>Image</dt>
           <dd><%= @app.current_deployment.image_reference %></dd>
           <dt>Port</dt>
           <dd><%= @app.current_deployment.port %></dd>
           <dt>Health check</dt>
           <dd><%= @app.current_deployment.health_check_kind.humanize %><%= " #{@app.current_deployment.health_check_path}" if @app.current_deployment.health_check_path.present? %></dd>
+          <dt>Deployed</dt>
+          <dd><%= @app.current_deployment.deployed_at || "Not started" %></dd>
         </dl>
       <% else %>
         <p>No deployment has been created.</p>
+      <% end %>
+
+      <%= form_with url: deploy_app_path(@app), scope: :deployment, class: "stacked-form deployment-form" do |form| %>
+        <div>
+          <%= form.label :image_reference, "Deploy image" %>
+          <%= form.text_field :image_reference, value: @app.current_deployment&.image_reference || @app.image_reference, placeholder: "ghcr.io/example/app:latest", required: true %>
+        </div>
+
+        <label class="checkbox-row">
+          <%= form.check_box :start, checked: @app.status == "running" %>
+          Start after deployment
+        </label>
+
+        <%= form.submit @app.current_deployment ? "Redeploy" : "Deploy" %>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Deployment History</h2>
+      <% if @deployments.any? %>
+        <ol class="event-list deployment-list">
+          <% @deployments.each do |deployment| %>
+            <li>
+              <strong>
+                Deployment <%= deployment.id %>
+                <% if deployment.current? %>
+                  <span class="status-pill">Current</span>
+                <% end %>
+              </strong>
+              <span><%= deployment.image_reference %></span>
+              <small><%= deployment.status.humanize %>, port <%= deployment.port %>, <%= deployment.created_at.to_fs(:short) %></small>
+              <% unless deployment.current? %>
+                <%= button_to "Rollback", rollback_app_path(@app),
+                              method: :post,
+                              params: { deployment_id: deployment.id },
+                              class: "button compact secondary",
+                              form: { data: { turbo_confirm: "Rollback to deployment #{deployment.id}?" } } %>
+              <% end %>
+            </li>
+          <% end %>
+        </ol>
+      <% else %>
+        <p>No deployment history yet.</p>
       <% end %>
     </article>
 

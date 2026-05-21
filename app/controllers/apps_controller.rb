@@ -1,6 +1,6 @@
 class AppsController < ApplicationController
   before_action :set_app, only: %i[
-    show edit update wake sleep inspect_runtime provision_database rotate_database_credentials backup_database
+    show edit update deploy rollback wake sleep inspect_runtime provision_database rotate_database_credentials backup_database
   ]
 
   def index
@@ -43,6 +43,26 @@ class AppsController < ApplicationController
       @environment_variables = @app.environment_variables.ordered
       render :edit, status: :unprocessable_content
     end
+  end
+
+  def deploy
+    result = deployment_workflow.deploy_image(
+      @app,
+      image_reference: deployment_params.fetch(:image_reference),
+      start: ActiveModel::Type::Boolean.new.cast(deployment_params[:start]),
+      requested_by: current_user.email
+    )
+    return redirect_to @app, notice: deployment_notice(result.deployment) if result.success?
+
+    redirect_to @app, alert: result.error.message
+  end
+
+  def rollback
+    deployment = @app.deployments.find(params.expect(:deployment_id))
+    result = deployment_workflow.rollback(@app, deployment: deployment, requested_by: current_user.email)
+    return redirect_to @app, notice: "Rolled back to deployment #{deployment.id}." if result.success?
+
+    redirect_to @app, alert: result.error.message
   end
 
   def wake
@@ -130,6 +150,10 @@ class AppsController < ApplicationController
     ])
   end
 
+  def deployment_params
+    params.expect(deployment: %i[image_reference start])
+  end
+
   def create_initial_deployment(app)
     return if app.image_reference.blank? || app.internal_port.blank?
 
@@ -176,6 +200,7 @@ class AppsController < ApplicationController
 
   def load_app_detail
     @events = @app.app_events.order(created_at: :desc).limit(20)
+    @deployments = @app.deployments.order(created_at: :desc)
     @runtime_instance = @app.runtime_instances.order(created_at: :desc).first
     @latest_logs = @app.app_logs.includes(:runtime_instance, :deployment).recent(20)
     @routes = @app.routes.order(active: :desc, hostname: :asc)
@@ -224,5 +249,13 @@ class AppsController < ApplicationController
 
   def runtime_agent
     RuntimeAgent.build
+  end
+
+  def deployment_workflow
+    DeploymentWorkflow.new(runtime_agent: runtime_agent)
+  end
+
+  def deployment_notice(deployment)
+    "Deployment #{deployment.id} is current."
   end
 end

@@ -70,6 +70,10 @@ class App < ApplicationRecord
   after_create :record_creation_event
 
   validates :name, :slug, :status, presence: true
+  validates :image_reference, format: {
+    with: Deployment::IMAGE_REFERENCE_FORMAT,
+    message: "must be a valid container image reference"
+  }, allow_blank: true
   validates :slug, uniqueness: true,
                    format: {
                      with: /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/,

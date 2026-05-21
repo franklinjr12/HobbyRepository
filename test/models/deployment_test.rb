@@ -49,4 +49,13 @@ class DeploymentTest < ActiveSupport::TestCase
     event = @app.app_events.find_by!(event_type: "deployment.created")
     assert_equal deployment.id, event.metadata["deployment_id"]
   end
+
+  test "validates container image reference shape" do
+    assert @app.deployments.build(image_reference: "registry.example.com/team/app:v1", port: 3000).valid?
+
+    deployment = @app.deployments.build(image_reference: "https://registry.example.com/team/app v1", port: 3000)
+
+    assert_not deployment.valid?
+    assert_includes deployment.errors[:image_reference], "must be a valid container image reference"
+  end
 end

@@ -2,12 +2,17 @@ require "test_helper"
 
 class AppsControllerTest < ActionDispatch::IntegrationTest
   class FakeRuntimeAgent
+    attr_reader :started_apps, :stopped_apps
+
     def initialize(start_result: nil, stop_result: nil)
       @start_result = start_result
       @stop_result = stop_result
+      @started_apps = []
+      @stopped_apps = []
     end
 
     def start_app(app)
+      @started_apps << app
       return @start_result if @start_result
 
       app.manual_override_to!("waking", reason: "test runtime start")
@@ -16,6 +21,7 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     end
 
     def stop_app(app)
+      @stopped_apps << app
       return @stop_result if @stop_result
 
       app.manual_override_to!("stopped", reason: "test runtime stop")
@@ -180,6 +186,9 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h2", text: "Configuration"
     assert_select "h2", text: "Runtime Instance"
+    assert_select "h2", text: "Deployment History"
+    assert_select "form[action='#{deploy_app_path(app)}']"
+    assert_select "form[action='#{rollback_app_path(app)}']", count: 0
     assert_select "h2", text: "Request Metrics"
     assert_select "h2", text: "Runtime Metrics"
     assert_select "h2", text: "Cold Starts"
@@ -307,6 +316,98 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "pending", app.database_resource.status
     assert_not original_deployment.reload.current?
     assert_includes app.app_events.order(:created_at).pluck(:event_type), "app.updated"
+  end
+
+  test "deploy creates current deployment from image and preserves history" do
+    app = @user.apps.create!(
+      name: "Deploy Existing Image",
+      image_reference: "example/old:latest",
+      internal_port: 3000,
+      status: "created"
+    )
+    original_deployment = app.deployments.create!(image_reference: "example/old:latest", port: 3000, current: true)
+
+    assert_difference -> { Deployment.count }, 1 do
+      post deploy_app_path(app), params: {
+        deployment: {
+          image_reference: "registry.example.com/team/app:v2",
+          start: "0"
+        }
+      }
+    end
+
+    app.reload
+    assert_redirected_to app_path(app)
+    assert_equal "registry.example.com/team/app:v2", app.current_deployment.image_reference
+    assert_equal "sleeping", app.status
+    assert_equal "retired", original_deployment.reload.status
+    assert_not original_deployment.current?
+    assert_includes app.app_events.order(:created_at).pluck(:event_type), "deployment.deployed"
+  end
+
+  test "deploy rejects invalid image reference" do
+    app = @user.apps.create!(name: "Invalid Image", image_reference: "example/app:latest", internal_port: 3000)
+
+    assert_no_difference -> { Deployment.count } do
+      post deploy_app_path(app), params: {
+        deployment: {
+          image_reference: "https://example.com/app image",
+          start: "0"
+        }
+      }
+    end
+
+    assert_redirected_to app_path(app)
+    assert_match "Image reference", flash[:alert]
+  end
+
+  test "redeploy running app stops old runtime and starts new deployment" do
+    app = @user.apps.create!(
+      name: "Running Redeploy",
+      image_reference: "example/app:v1",
+      internal_port: 3000,
+      status: "running"
+    )
+    app.deployments.create!(image_reference: "example/app:v1", port: 3000, current: true)
+    app.runtime_instances.create!(status: "running", container_id: "old-runtime")
+    agent = FakeRuntimeAgent.new
+
+    with_runtime_agent(agent) do
+      post deploy_app_path(app), params: {
+        deployment: {
+          image_reference: "example/app:v2",
+          start: "1"
+        }
+      }
+    end
+
+    app.reload
+    assert_redirected_to app_path(app)
+    assert_equal "example/app:v2", app.current_deployment.image_reference
+    assert_equal "deployed", app.current_deployment.status
+    assert_equal 1, agent.stopped_apps.size
+    assert_equal 1, agent.started_apps.size
+    assert_equal "waking", app.status
+  end
+
+  test "rollback marks selected deployment current and records event" do
+    app = @user.apps.create!(
+      name: "Rollback App",
+      image_reference: "example/app:v2",
+      internal_port: 3000,
+      status: "sleeping"
+    )
+    old_deployment = app.deployments.create!(image_reference: "example/app:v1", port: 3000, status: "retired")
+    current_deployment = app.deployments.create!(image_reference: "example/app:v2", port: 3000, current: true)
+
+    post rollback_app_path(app), params: { deployment_id: old_deployment.id }
+
+    app.reload
+    assert_redirected_to app_path(app)
+    assert old_deployment.reload.current?
+    assert_not current_deployment.reload.current?
+    assert_equal "example/app:v1", app.image_reference
+    assert_equal "deployment.rollback", app.app_events.order(:created_at).last.event_type
   end
 
   test "settings update can disable an active volume mount" do

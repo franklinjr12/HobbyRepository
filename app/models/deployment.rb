@@ -1,5 +1,6 @@
 class Deployment < ApplicationRecord
   STATUSES = %w[created deploying deployed failed retired].freeze
+  IMAGE_REFERENCE_FORMAT = /\A[a-z0-9]+(?:(?:[._-]|__|[-]*)[a-z0-9]+)*(?::[0-9]+)?(?:\/[a-z0-9]+(?:(?:[._-]|__|[-]*)[a-z0-9]+)*)*(?::[\w][\w.-]{0,127})?(?:@sha256:[a-f0-9]{64})?\z/.freeze
 
   belongs_to :app
   has_many :runtime_instances, dependent: :restrict_with_error
@@ -9,6 +10,10 @@ class Deployment < ApplicationRecord
   after_create :record_creation_event
 
   validates :image_reference, :port, :status, presence: true
+  validates :image_reference, format: {
+    with: IMAGE_REFERENCE_FORMAT,
+    message: "must be a valid container image reference"
+  }, allow_blank: true
   validates :status, inclusion: { in: STATUSES }
   validates :health_check_kind, inclusion: { in: App::HEALTH_CHECK_KINDS }
   validates :health_check_path, presence: true, if: :http_health_check?
@@ -21,6 +26,10 @@ class Deployment < ApplicationRecord
       app.deployments.where.not(id: id).find_each { |deployment| deployment.update!(current: false) }
       update!(current: true, deployed_at: deployed_at || Time.current)
     end
+  end
+
+  def self.valid_image_reference?(image_reference)
+    image_reference.to_s.match?(IMAGE_REFERENCE_FORMAT)
   end
 
   def log_label

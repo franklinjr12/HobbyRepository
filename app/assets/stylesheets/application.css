@@ -448,6 +448,21 @@ dd {
   margin-top: 18px;
 }
 
+.deployment-form,
+.deployment-list {
+  margin-top: 18px;
+}
+
+.deployment-list li {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e6ebf2;
+}
+
+.deployment-list li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
 .card-action {
   margin: 12px 0 0;
 }
