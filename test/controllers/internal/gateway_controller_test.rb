@@ -5,6 +5,8 @@ module Internal
     include ActiveJob::TestHelper
 
     setup do
+      @previous_internal_token = ENV["PLATFORM_INTERNAL_TOKEN"]
+      ENV["PLATFORM_INTERNAL_TOKEN"] = nil
       @node = Node.create!(name: "Local", hostname: "local.test", local: true)
       @owner = User.create!(email: "gateway@example.com", password: "password123")
       @managed_app = App.create!(
@@ -26,16 +28,54 @@ module Internal
     end
 
     teardown do
+      ENV["PLATFORM_INTERNAL_TOKEN"] = @previous_internal_token
       clear_enqueued_jobs
       clear_performed_jobs
     end
 
-    def gateway_get(path, params: {})
-      get path, params: params, headers: { "Accept" => "application/json" }
+    def gateway_get(path, params: {}, token: nil)
+      headers = { "Accept" => "application/json" }
+      headers["Authorization"] = "Bearer #{token}" if token
+      get path, params: params, headers: headers
     end
 
-    def gateway_post(path, params: {})
-      post path, params: params, headers: { "Accept" => "application/json" }
+    def gateway_post(path, params: {}, token: nil)
+      headers = { "Accept" => "application/json" }
+      headers["Authorization"] = "Bearer #{token}" if token
+      post path, params: params, headers: headers
+    end
+
+    test "rejects internal gateway requests without the platform token when configured" do
+      ENV["PLATFORM_INTERNAL_TOKEN"] = "internal-test-token"
+      log_output = StringIO.new
+      logger = ActiveSupport::Logger.new(log_output)
+      previous_logger = Rails.logger
+
+      begin
+        Rails.logger = logger
+        assert_no_enqueued_jobs do
+          gateway_post "/internal/gateway/wake", params: { app_id: @managed_app.id }
+        end
+      ensure
+        Rails.logger = previous_logger
+      end
+
+      assert_response :unauthorized
+      assert_equal "unauthorized", response.parsed_body.fetch("status")
+      assert_equal "sleeping", @managed_app.reload.status
+      assert_includes log_output.string, "Unauthorized internal gateway request"
+      assert_includes log_output.string, "invalid internal token"
+    end
+
+    test "accepts internal gateway requests with the platform token" do
+      ENV["PLATFORM_INTERNAL_TOKEN"] = "internal-test-token"
+
+      gateway_get "/internal/gateway/resolve",
+                  params: { hostname: @managed_app.default_route.hostname },
+                  token: "internal-test-token"
+
+      assert_response :accepted
+      assert_equal "wake_required", response.parsed_body.fetch("status")
     end
 
     test "resolves unknown hostnames with safe not found response" do

@@ -79,17 +79,26 @@ module Internal
     private
 
     def authenticate_gateway!
-      expected_token = ENV["GATEWAY_SHARED_SECRET"]
+      expected_token = ENV["PLATFORM_INTERNAL_TOKEN"].presence || ENV["GATEWAY_SHARED_SECRET"]
       return if expected_token.blank? && !Rails.env.production?
 
       if expected_token.blank?
+        log_unauthorized_gateway_attempt!("missing internal token configuration")
         return render(json: { status: "unauthorized" }, status: :unauthorized)
       end
 
       token = request.authorization.to_s.delete_prefix("Bearer ").presence
       return if ActiveSupport::SecurityUtils.secure_compare(token.to_s, expected_token.to_s)
 
+      log_unauthorized_gateway_attempt!("invalid internal token")
       render json: { status: "unauthorized" }, status: :unauthorized
+    end
+
+    def log_unauthorized_gateway_attempt!(reason)
+      Rails.logger.warn(
+        "Unauthorized internal gateway request: reason=#{reason.inspect} " \
+        "path=#{request.fullpath.inspect} remote_ip=#{request.remote_ip.inspect}"
+      )
     end
 
     def resolve_route

@@ -3,6 +3,7 @@ require "json"
 module RuntimeAgent
   class LocalDockerAgent
     PLATFORM_LABEL_VALUE = "true".freeze
+    DEFAULT_APP_NETWORK = "hobby-apps".freeze
     DEFAULT_STOP_TIMEOUT_SECONDS = 10
     DEFAULT_LOG_LINES = 200
 
@@ -24,6 +25,7 @@ module RuntimeAgent
       app.manual_override_to!("waking", reason: "runtime agent start")
 
       verify_image!(deployment.image_reference)
+      ensure_app_network!
       container_name = container_name_for(app, deployment, runtime_instance)
       command = start_command(app, deployment, runtime_instance, container_name)
       container_start_started_at = monotonic_time
@@ -230,6 +232,8 @@ module RuntimeAgent
     def start_command(app, deployment, runtime_instance, container_name)
       command = %w[docker run --detach --name] + [ container_name ]
       command += label_args(app, deployment, runtime_instance)
+      command += isolation_args
+      command += network_args(container_name)
       command += env_args(app.runtime_environment)
       command += volume_args(app)
       command += [ "--expose", deployment.port.to_s ]
@@ -237,6 +241,38 @@ module RuntimeAgent
       command << "--cpus=#{app.cpu_limit}" if app.cpu_limit.present?
       command << deployment.image_reference
       command
+    end
+
+    def ensure_app_network!
+      inspect_result = run(%w[docker network inspect] + [ app_network_name ])
+      return if inspect_result.success?
+
+      create_result = run(
+        %w[docker network create --driver bridge --internal --label] +
+          [ "#{LABEL_PLATFORM}=#{PLATFORM_LABEL_VALUE}", app_network_name ]
+      )
+      raise Failure.new(
+        normalized_error(:network_unavailable, "App network could not be created", %w[docker network create], create_result)
+      ) unless create_result.success?
+    end
+
+    def isolation_args
+      [
+        "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges:true",
+        "--pids-limit", "256"
+      ]
+    end
+
+    def network_args(container_name)
+      [
+        "--network", app_network_name,
+        "--network-alias", container_name
+      ]
+    end
+
+    def app_network_name
+      ENV["PLATFORM_APP_NETWORK"].presence || DEFAULT_APP_NETWORK
     end
 
     def label_args(app, deployment, runtime_instance)

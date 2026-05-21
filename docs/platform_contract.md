@@ -55,6 +55,24 @@ The local filesystem inside an app container is ephemeral. Any file written
 outside a configured volume can disappear when the app sleeps, restarts, crashes,
 or is redeployed.
 
+## Security Baseline
+
+Internal gateway endpoints require the shared `PLATFORM_INTERNAL_TOKEN` bearer
+token in production. Failed token checks are logged by the control plane and
+return a generic unauthorized response.
+
+App containers are started without privileged mode, with all Linux capabilities
+dropped, `no-new-privileges` enabled, a PID limit, app-specific volume mounts
+only, and no Docker socket mount. Containers also carry platform labels for app,
+deployment, and runtime instance ownership.
+
+App containers run on a managed internal Docker bridge network named by
+`PLATFORM_APP_NETWORK` or `hobby-apps` by default. The network is created with
+Docker's internal flag so public traffic is expected to enter through the
+gateway/control-plane path. This is a single-node baseline: host-level firewall
+rules and stronger egress policy are still required if operators need to block
+all possible host or LAN reachability from app code.
+
 ## Single-Node Boundary
 
 The MVP runs on one local node. Every app is assigned to that node and every

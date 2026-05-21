@@ -67,6 +67,7 @@ module RuntimeAgent
     test "starts an app container through one normalized command boundary" do
       runner = FakeRunner.new([
         FakeRunner.success,
+        FakeRunner.success,
         FakeRunner.success("container-123\n")
       ])
       agent = LocalDockerAgent.new(runner: runner, health_checker: successful_health_checker)
@@ -79,7 +80,7 @@ module RuntimeAgent
       end
 
       runtime_instance = @app.runtime_instances.order(:created_at).last
-      run_command = runner.commands.second
+      run_command = runner.commands.third
 
       assert_equal "running", @app.reload.status
       assert_equal "running", runtime_instance.status
@@ -92,6 +93,16 @@ module RuntimeAgent
       assert_equal 125, @app.cold_start_metrics.last.health_check_duration_ms
       assert_includes run_command, "--expose"
       assert_includes run_command, "3000"
+      assert_includes run_command, "--cap-drop"
+      assert_includes run_command, "ALL"
+      assert_includes run_command, "--security-opt"
+      assert_includes run_command, "no-new-privileges:true"
+      assert_includes run_command, "--pids-limit"
+      assert_includes run_command, "256"
+      assert_includes run_command, "--network"
+      assert_includes run_command, "hobby-apps"
+      assert_includes run_command, "--network-alias"
+      assert_includes run_command, "hobby-agent-app-d#{@deployment.id}-r#{runtime_instance.id}"
       assert_includes run_command, "--env"
       assert_includes run_command, "RAILS_ENV=production"
       assert_includes run_command, "DATABASE_URL=#{@database_resource.connection_url}"
@@ -107,8 +118,47 @@ module RuntimeAgent
       assert_includes @app.app_events.pluck(:event_type), "health_check.succeeded"
     end
 
+    test "creates the controlled app network before starting when it is missing" do
+      runner = FakeRunner.new([
+        FakeRunner.success,
+        FakeRunner.failure("network not found"),
+        FakeRunner.success("hobby-apps\n"),
+        FakeRunner.success("container-123\n")
+      ])
+      agent = LocalDockerAgent.new(runner: runner, health_checker: successful_health_checker)
+
+      result = agent.start_app(@app)
+
+      assert result.success?
+      assert_equal %w[docker network inspect hobby-apps], runner.commands.second
+      assert_equal(
+        [
+          "docker", "network", "create", "--driver", "bridge", "--internal", "--label",
+          "#{LABEL_PLATFORM}=true", "hobby-apps"
+        ],
+        runner.commands.third
+      )
+    end
+
+    test "fails safely when the controlled app network cannot be prepared" do
+      runner = FakeRunner.new([
+        FakeRunner.success,
+        FakeRunner.failure("network not found"),
+        FakeRunner.failure("permission denied")
+      ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      result = agent.start_app(@app)
+
+      assert_not result.success?
+      assert_equal "network_unavailable", result.error.code
+      assert_equal "wake_failed", @app.reload.status
+      assert_equal "crashed", @app.runtime_instances.order(:created_at).last.status
+    end
+
     test "marks wake failed when readiness check times out" do
       runner = FakeRunner.new([
+        FakeRunner.success,
         FakeRunner.success,
         FakeRunner.success("container-123\n")
       ])
@@ -140,6 +190,7 @@ module RuntimeAgent
 
     test "normalizes start failures and records wake failure state" do
       runner = FakeRunner.new([
+        FakeRunner.success,
         FakeRunner.success,
         FakeRunner.failure("port already allocated")
       ])
