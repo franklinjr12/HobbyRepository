@@ -11,6 +11,10 @@
 require "digest"
 
 node = Node.ensure_local!
+node.update!(
+  capacity_memory_bytes: ENV.fetch("PLATFORM_NODE_MEMORY_BYTES", 1.gigabyte).to_i,
+  capacity_cpu: ENV.fetch("PLATFORM_NODE_CPU", 2).to_d
+)
 
 admin = User.find_or_initialize_by(email: ENV.fetch("SEED_USER_EMAIL", "admin@example.com"))
 admin.assign_attributes(

@@ -69,7 +69,7 @@
         <dt>Startup timeout</dt>
         <dd><%= pluralize(@app.startup_timeout_seconds, "second") %></dd>
         <dt>Memory limit</dt>
-        <dd><%= @app.memory_limit_bytes.presence || "No limit configured" %></dd>
+        <dd><%= number_to_human_size(@app.memory_limit_bytes) %></dd>
         <dt>CPU limit</dt>
         <dd><%= @app.cpu_limit.presence || "No limit configured" %></dd>
       </dl>
@@ -256,6 +256,10 @@
           <dd><%= @runtime_instance.stopped_at || "Not stopped" %></dd>
           <dt>Exit code</dt>
           <dd><%= @runtime_instance.exit_code.nil? ? "None" : @runtime_instance.exit_code %></dd>
+          <% if @runtime_instance.failure_message.present? %>
+            <dt>Likely cause</dt>
+            <dd><%= @runtime_instance.failure_message %></dd>
+          <% end %>
           <dt>Health check result</dt>
           <dd><%= @runtime_instance.health_check_result.presence || "Not checked" %></dd>
           <dt>Health check status</dt>

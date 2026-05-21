@@ -4,6 +4,7 @@ class App < ApplicationRecord
   DEFAULT_HEALTH_CHECK_PATH = "/".freeze
   DEFAULT_HEALTH_CHECK_KIND = "http".freeze
   DEFAULT_DRAIN_TIMEOUT_SECONDS = 30
+  DEFAULT_MEMORY_LIMIT_BYTES = ENV.fetch("PLATFORM_DEFAULT_MEMORY_LIMIT_BYTES", 256.megabytes).to_i
 
   HEALTH_CHECK_KINDS = %w[http port].freeze
 
@@ -91,8 +92,7 @@ class App < ApplicationRecord
             numericality: { only_integer: true, greater_than_or_equal_to: 60 }
   validates :startup_timeout_seconds,
             numericality: { only_integer: true, greater_than_or_equal_to: 1 }
-  validates :memory_limit_bytes, numericality: { only_integer: true, greater_than: 0 },
-                                 allow_nil: true
+  validates :memory_limit_bytes, numericality: { only_integer: true, greater_than: 0 }
   validates :cpu_limit, numericality: { greater_than: 0 }, allow_nil: true
   validate :status_transition_must_be_valid, if: :will_save_change_to_status?
   validate :requested_volume_mount_path_must_be_valid, if: :volume_requested?
@@ -337,6 +337,7 @@ class App < ApplicationRecord
     self.health_check_path = nil if port_health_check?
     self.idle_timeout_seconds ||= DEFAULT_IDLE_TIMEOUT_SECONDS
     self.startup_timeout_seconds ||= DEFAULT_STARTUP_TIMEOUT_SECONDS
+    self.memory_limit_bytes ||= DEFAULT_MEMORY_LIMIT_BYTES
     self.active_request_count ||= 0
     self.active_connection_count ||= 0
   end

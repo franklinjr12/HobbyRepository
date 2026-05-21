@@ -203,6 +203,39 @@ module RuntimeAgent
       assert_nil runtime_instance.stopped_at
     end
 
+    test "inspect records likely memory limit cause when docker reports oom killed" do
+      @app.manual_override_to!("running", reason: "test running container")
+      runtime_instance = @app.runtime_instances.create!(status: "running", container_id: "container-123")
+      runner = FakeRunner.new([
+        FakeRunner.success([ { State: { Running: false, ExitCode: 137, OOMKilled: true } } ].to_json),
+        FakeRunner.success
+      ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      result = agent.inspect_app(@app)
+
+      assert result.success?
+      assert_equal "crashed", @app.reload.status
+      assert_equal "crashed", runtime_instance.reload.status
+      assert_equal 137, runtime_instance.exit_code
+      assert_match "exceeding", runtime_instance.failure_message
+      assert_equal "runtime.oom_killed", @app.app_events.order(:created_at).last.event_type
+    end
+
+    test "start rejects apps when host capacity is unavailable" do
+      @node.update!(capacity_memory_bytes: 128.megabytes)
+      @app.update!(memory_limit_bytes: 256.megabytes)
+      runner = FakeRunner.new([])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      result = agent.start_app(@app)
+
+      assert_not result.success?
+      assert_equal "capacity_unavailable", result.error.code
+      assert_empty runner.commands
+      assert_equal "runtime.capacity_unavailable", @app.app_events.order(:created_at).last.event_type
+    end
+
     test "inspect captures runtime memory cpu and uptime snapshots" do
       @app.update!(status: "waking")
       runtime_instance = @app.runtime_instances.create!(

@@ -14,6 +14,8 @@ module RuntimeAgent
     def start_app(app)
       deployment = app.current_deployment
       return failure(:missing_deployment, "App has no current deployment") unless deployment
+      capacity = RuntimeCapacityGuard.new(node: app.node).check(app)
+      return capacity_failure(app, capacity) unless capacity.success?
 
       wake_started_at = Time.current
       wake_started_monotonic = monotonic_time
@@ -267,22 +269,28 @@ module RuntimeAgent
       exit_code = state["ExitCode"]
       running = state["Running"]
       status = running ? "running" : stopped_status_for(exit_code)
-      app_status = running ? "running" : stopped_app_status_for(exit_code)
+      oom_killed = state["OOMKilled"]
+      app_status = running ? "running" : stopped_app_status_for(exit_code, oom_killed: oom_killed)
+      failure_message = oom_killed ? oom_failure_message(app) : runtime_instance.failure_message
 
       runtime_instance.update!(
         status: status,
         exit_code: exit_code,
+        failure_message: failure_message,
         last_seen_at: Time.current,
         stopped_at: running ? nil : Time.current
       )
       app.manual_override_to!(app_status, reason: "runtime agent inspect sync")
+      record_oom_event(app, runtime_instance) if oom_killed
     end
 
     def stopped_status_for(exit_code)
       exit_code.to_i.zero? ? "stopped" : "crashed"
     end
 
-    def stopped_app_status_for(exit_code)
+    def stopped_app_status_for(exit_code, oom_killed: false)
+      return "crashed" if oom_killed
+
       exit_code.to_i.zero? ? "stopped" : "crashed"
     end
 
@@ -449,6 +457,8 @@ module RuntimeAgent
         port: deployment.port,
         health_check_kind: deployment.health_check_kind,
         health_check_path: deployment.health_check_path,
+        memory_limit_bytes: app.memory_limit_bytes,
+        cpu_limit: app.cpu_limit,
         volume_id: app.active_volume&.id,
         volume_mount_path: app.active_volume&.mount_path
       }
@@ -479,6 +489,36 @@ module RuntimeAgent
       return if runtime_instance&.container_id.blank?
 
       get_logs(app)
+    end
+
+    def capacity_failure(app, capacity)
+      app.record_event!(
+        "runtime.capacity_unavailable",
+        capacity.error,
+        metadata: capacity.details
+      )
+      Result.failure(Error.new("capacity_unavailable", capacity.error, nil, nil, nil, capacity.details))
+    end
+
+    def oom_failure_message(app)
+      if app.memory_limit_bytes.present?
+        "Container was killed after exceeding the #{app.memory_limit_bytes} byte memory limit."
+      else
+        "Container was killed after exceeding its memory limit."
+      end
+    end
+
+    def record_oom_event(app, runtime_instance)
+      app.record_event!(
+        "runtime.oom_killed",
+        "Container was killed after exceeding its memory limit.",
+        metadata: {
+          runtime_instance_id: runtime_instance.id,
+          container_id: runtime_instance.container_id,
+          memory_limit_bytes: app.memory_limit_bytes,
+          exit_code: runtime_instance.exit_code
+        }
+      )
     end
 
     def capture_runtime_metrics(app, runtime_instance, state)

@@ -24,7 +24,18 @@
     <article>
       <span class="status-dot"></span>
       <h2>Local node</h2>
-      <p><%= Node.ensure_local!.hostname %> is the single-node runtime target.</p>
+      <p><%= @local_node.hostname %> is the single-node runtime target.</p>
+    </article>
+    <article>
+      <span class="status-dot"></span>
+      <h2>Host Capacity</h2>
+      <p>
+        <%= pluralize(@running_app_count, "app") %> running,
+        <%= number_to_human_size(@reserved_memory_bytes) %> reserved
+        <% if @local_node.capacity_memory_bytes.present? %>
+          of <%= number_to_human_size(@local_node.capacity_memory_bytes) %>
+        <% end %>
+      </p>
     </article>
   </section>
 

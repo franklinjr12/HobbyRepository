@@ -194,6 +194,9 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", text: "Cold Starts"
     assert_select "dt", text: "Health check result"
     assert_select "dt", text: "Memory usage"
+    assert_select "dt", text: "Memory limit"
+    assert_select "dd", text: /256 MB/
+    assert_select "dt", text: "Likely cause"
     assert_select "h2", text: "Routes"
     assert_select "form[action='#{inspect_runtime_app_path(app)}']"
     assert_select "a[href='#{app_app_logs_path(app)}']", text: "Logs"

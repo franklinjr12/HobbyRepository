@@ -15,6 +15,7 @@ class AppTest < ActiveSupport::TestCase
     assert_equal "created", app.status
     assert_equal 900, app.idle_timeout_seconds
     assert_equal 60, app.startup_timeout_seconds
+    assert_equal App::DEFAULT_MEMORY_LIMIT_BYTES, app.memory_limit_bytes
     assert_equal "http", app.health_check_kind
     assert_equal "/", app.health_check_path
     assert_equal "tiny-site.localhost", app.default_route.hostname

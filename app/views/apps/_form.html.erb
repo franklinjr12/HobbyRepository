@@ -63,7 +63,7 @@
 
       <div>
         <%= form.label :memory_limit_bytes %>
-        <%= form.number_field :memory_limit_bytes, min: 1, placeholder: "optional" %>
+        <%= form.number_field :memory_limit_bytes, min: 1, placeholder: App::DEFAULT_MEMORY_LIMIT_BYTES %>
       </div>
     </div>
 
