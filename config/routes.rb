@@ -1,4 +1,13 @@
 Rails.application.routes.draw do
+  app_hostname = lambda do |request|
+    Route.resolve_hostname(request.host).present?
+  end
+
+  constraints app_hostname do
+    root "local_gateway#proxy", as: :local_gateway_root
+    match "*path", to: "local_gateway#proxy", via: :all
+  end
+
   root "dashboard#index"
   get "dashboard", to: "dashboard#index", as: :dashboard
   get "sign_in", to: "sessions#new"

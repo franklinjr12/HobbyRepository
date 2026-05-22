@@ -46,6 +46,14 @@ module RuntimeAgent
         duration_ms: elapsed_ms(started_at),
         error_message: failure_message(deployment, last_status_code, last_error, timeout_seconds)
       )
+    rescue RuntimeError => error
+      Result.failure(
+        kind: deployment.health_check_kind,
+        target: { port: deployment.port },
+        status_code: nil,
+        duration_ms: elapsed_ms(started_at),
+        error_message: error.message
+      )
     end
 
     private

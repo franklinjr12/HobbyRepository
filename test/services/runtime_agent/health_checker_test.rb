@@ -12,6 +12,16 @@ module RuntimeAgent
           [ { NetworkSettings: { IPAddress: @ip_address } } ].to_json,
           "",
           0
+      )
+      end
+    end
+
+    class MissingAddressRunner
+      def call(_command)
+        DockerRunner::CommandResult.new(
+          [ { NetworkSettings: { Networks: { "hobby-apps" => { IPAddress: "" } } } } ].to_json,
+          "",
+          0
         )
       end
     end
@@ -98,6 +108,27 @@ module RuntimeAgent
         assert_equal 503, result.status_code
         assert_match "HTTP 503", result.error_message
       end
+    end
+
+    test "reports failure when container has no network address" do
+      deployment = @app.deployments.create!(
+        image_reference: "example/health:latest",
+        port: 3000,
+        health_check_kind: "http",
+        health_check_path: "/ready",
+        current: true
+      )
+      checker = HealthChecker.new(runner: MissingAddressRunner.new, interval_seconds: 0)
+
+      result = checker.wait_until_ready(
+        deployment: deployment,
+        runtime_instance: @runtime_instance,
+        timeout_seconds: 1
+      )
+
+      assert_not result.success?
+      assert_equal "Container network address was not available", result.error_message
+      assert_equal({ port: 3000 }, result.target)
     end
 
     private

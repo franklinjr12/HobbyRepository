@@ -95,6 +95,10 @@ module RuntimeAgent
       assert_includes run_command, "3000"
       assert_includes run_command, "--cap-drop"
       assert_includes run_command, "ALL"
+      assert_includes run_command, "--cap-add"
+      assert_includes run_command, "CHOWN"
+      assert_includes run_command, "SETGID"
+      assert_includes run_command, "SETUID"
       assert_includes run_command, "--security-opt"
       assert_includes run_command, "no-new-privileges:true"
       assert_includes run_command, "--pids-limit"
@@ -393,7 +397,7 @@ module RuntimeAgent
 
       assert result.success?
       assert_equal(
-        [ "docker", "ps", "--all", "--filter", "label=hobby.platform=true", "--format", "{{ json . }}" ],
+        [ "docker", "ps", "--all", "--no-trunc", "--filter", "label=hobby.platform=true", "--format", "{{ json . }}" ],
         runner.commands.first
       )
       container = result.payload.fetch(:containers).first

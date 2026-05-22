@@ -17,6 +17,7 @@ services:
       PLATFORM_APP_NETWORK: hobby-apps
       PLATFORM_INTERNAL_TOKEN: local-dev-token
     ports:
+      - "80:3000"
       - "3000:3000"
     volumes:
       - .:/rails

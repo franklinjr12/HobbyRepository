@@ -214,7 +214,7 @@ module RuntimeAgent
 
     def list_platform_containers
       command = [
-        "docker", "ps", "--all",
+        "docker", "ps", "--all", "--no-trunc",
         "--filter", "label=#{LABEL_PLATFORM}=#{PLATFORM_LABEL_VALUE}",
         "--format", "{{ json . }}"
       ]
@@ -287,6 +287,9 @@ module RuntimeAgent
     def isolation_args
       [
         "--cap-drop", "ALL",
+        "--cap-add", "CHOWN",
+        "--cap-add", "SETGID",
+        "--cap-add", "SETUID",
         "--security-opt", "no-new-privileges:true",
         "--pids-limit", "256"
       ]
