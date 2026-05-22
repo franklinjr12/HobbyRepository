@@ -13,6 +13,9 @@ class SeedsTest < ActiveSupport::TestCase
     admin = User.find_by!(email: "admin@example.com")
     assert admin.admin?
     assert_equal "Platform Admin", admin.name
+    sample_user = User.find_by!(email: "user@example.com")
+    assert_not sample_user.admin?
+    assert_equal "Sample User", sample_user.name
 
     seeded_apps = admin.apps.where(slug: %w[
       sleepy-landing-page

@@ -13,6 +13,9 @@ Rails.application.routes.draw do
   get "sign_in", to: "sessions#new"
   post "sign_in", to: "sessions#create"
   delete "sign_out", to: "sessions#destroy"
+  resource :onboarding, only: %i[show], controller: :onboarding do
+    post :create_sample_app
+  end
   resources :apps, only: %i[index new create show edit update] do
     resources :environment_variables, only: %i[create update destroy]
     resources :database_backups, only: %i[show]
@@ -36,6 +39,7 @@ Rails.application.routes.draw do
     resources :apps, only: %i[index] do
       post :stop, on: :member
     end
+    resources :users, only: %i[index new create]
     resource :health, only: %i[show], controller: :health
   end
 

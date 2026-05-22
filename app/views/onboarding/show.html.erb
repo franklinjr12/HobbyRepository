@@ -1,0 +1,73 @@
+<% content_for :title, "First App Guide" %>
+
+<main class="page-shell">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">User onboarding</p>
+      <h1>First app guide</h1>
+      <p class="lede">Deploy a small HTTP container, confirm it can wake on traffic, and let it sleep when idle.</p>
+    </div>
+    <div class="inline-actions">
+      <%= link_to "Prefill form", new_app_path(sample: true), class: "button secondary" %>
+      <%= button_to "Create sample app", create_sample_app_onboarding_path, method: :post, class: "button" %>
+    </div>
+  </header>
+
+  <section class="onboarding-layout" aria-label="First app deployment guide">
+    <article class="guide-panel">
+      <h2>Known-good sample</h2>
+      <dl>
+        <dt>Image</dt>
+        <dd><code><%= App::SAMPLE_APP_ATTRIBUTES.fetch(:image_reference) %></code></dd>
+        <dt>Internal port</dt>
+        <dd><code><%= App::SAMPLE_APP_ATTRIBUTES.fetch(:internal_port) %></code></dd>
+        <dt>Health check</dt>
+        <dd><code><%= App::SAMPLE_APP_ATTRIBUTES.fetch(:health_check_path) %></code></dd>
+        <dt>Idle timeout</dt>
+        <dd><%= distance_of_time_in_words(App::SAMPLE_APP_ATTRIBUTES.fetch(:idle_timeout_seconds)) %></dd>
+      </dl>
+      <p class="muted">
+        The sample uses Traefik's whoami container because it starts quickly, listens on HTTP port 80,
+        and returns request details without any environment variables.
+      </p>
+      <% if @sample_app %>
+        <div class="inline-actions">
+          <%= link_to "Open sample", @sample_app, class: "button secondary compact" %>
+          <%= button_to "Wake", wake_app_path(@sample_app), method: :post, class: "button compact" %>
+          <%= button_to "Sleep", sleep_app_path(@sample_app), method: :post, class: "button secondary compact" %>
+        </div>
+      <% end %>
+    </article>
+
+    <article class="guide-panel">
+      <h2>Container contract</h2>
+      <ol class="guide-list">
+        <li>Run a long-lived web process in the foreground so the runtime can track container health.</li>
+        <li>Listen on the internal port configured on the app; the platform routes public traffic to that port.</li>
+        <li>Serve the health check path quickly during startup, or use a port check for non-HTTP services.</li>
+        <li>Store durable files only inside the persistent volume mount path when storage is enabled.</li>
+      </ol>
+    </article>
+
+    <article class="guide-panel">
+      <h2>Common mistakes</h2>
+      <ul class="guide-list">
+        <li>Binding to localhost inside the container instead of listening on all interfaces.</li>
+        <li>Setting the internal port to the host port from local development.</li>
+        <li>Using an image that exits after running a script or migration.</li>
+        <li>Saving uploads outside the persistent volume, then expecting them to survive sleep or replacement.</li>
+        <li>Choosing an idle timeout that is shorter than background requests, webhooks, or open connections.</li>
+      </ul>
+    </article>
+
+    <article class="guide-panel">
+      <h2>Wake and sleep check</h2>
+      <ol class="guide-list">
+        <li>Create the sample app, then open its generated hostname from the app detail page.</li>
+        <li>Use Wake to start the runtime and watch the status move from sleeping to waking or running.</li>
+        <li>Use Sleep to stop it manually, or wait for the idle timeout after traffic stops.</li>
+        <li>Review events, request metrics, and logs on the app detail page to confirm the lifecycle.</li>
+      </ol>
+    </article>
+  </section>
+</main>

@@ -24,6 +24,16 @@ admin.assign_attributes(
 admin.password = ENV.fetch("SEED_USER_PASSWORD", "password123") if admin.new_record? || ENV.key?("SEED_USER_PASSWORD")
 admin.save!
 
+sample_user = User.find_or_initialize_by(email: ENV.fetch("SEED_SAMPLE_USER_EMAIL", "user@example.com"))
+sample_user.assign_attributes(
+  name: "Sample User",
+  admin: false
+)
+if sample_user.new_record? || ENV.key?("SEED_SAMPLE_USER_PASSWORD")
+  sample_user.password = ENV.fetch("SEED_SAMPLE_USER_PASSWORD", "password123")
+end
+sample_user.save!
+
 def ensure_environment_variable!(app, key:, value:, secret: false)
   variable = app.environment_variables.find_or_initialize_by(key: key)
   variable.assign_attributes(value: value, secret: secret)

@@ -117,6 +117,16 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_equal %w[volume.created database.created app.created deployment.created], app.app_events.order(:created_at).pluck(:event_type)
   end
 
+  test "new can prefill the sample app configuration" do
+    get new_app_path(sample: true)
+
+    assert_response :success
+    assert_select "input[name='app[name]'][value='Sample Whoami App']"
+    assert_select "input[name='app[image_reference]'][value='traefik/whoami:v1.10']"
+    assert_select "input[name='app[internal_port]'][value='80']"
+    assert_select "input[name='app[idle_timeout_seconds]'][value='300']"
+  end
+
   test "index shows owned app management details" do
     app = @user.apps.create!(
       name: "Visible App",

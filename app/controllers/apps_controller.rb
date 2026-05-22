@@ -12,7 +12,7 @@ class AppsController < ApplicationController
   end
 
   def new
-    @app = current_user.apps.new
+    @app = current_user.apps.new(sample_app? ? App::SAMPLE_APP_ATTRIBUTES : {})
   end
 
   def edit
@@ -254,6 +254,10 @@ class AppsController < ApplicationController
 
   def deployment_workflow
     DeploymentWorkflow.new(runtime_agent: runtime_agent)
+  end
+
+  def sample_app?
+    ActiveModel::Type::Boolean.new.cast(params[:sample])
   end
 
   def deployment_notice(deployment)

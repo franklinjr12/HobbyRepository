@@ -1,0 +1,41 @@
+<% content_for :title, "Admin Users" %>
+
+<main class="page-shell">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Admin</p>
+      <h1>Users</h1>
+    </div>
+    <div class="inline-actions">
+      <%= link_to "All apps", admin_apps_path, class: "button secondary" %>
+      <%= link_to "New user", new_admin_user_path, class: "button" %>
+    </div>
+  </header>
+
+  <% if @users.any? %>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Name</th>
+          <th>Role</th>
+          <th>Apps</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @users.each do |user| %>
+          <tr>
+            <td><%= user.email %></td>
+            <td><%= user.name.presence || "Unnamed" %></td>
+            <td><%= user.admin? ? "Admin" : "User" %></td>
+            <td><%= pluralize(user.apps.count, "app") %></td>
+            <td><%= time_ago_in_words(user.created_at) %> ago</td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% else %>
+    <p class="empty-state">No users have been created yet.</p>
+  <% end %>
+</main>

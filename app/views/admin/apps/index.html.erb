@@ -6,7 +6,10 @@
       <p class="eyebrow">Admin</p>
       <h1>All apps</h1>
     </div>
-    <%= link_to "Platform health", admin_health_path, class: "button secondary" %>
+    <div class="inline-actions">
+      <%= link_to "Users", admin_users_path, class: "button secondary" %>
+      <%= link_to "Platform health", admin_health_path, class: "button secondary" %>
+    </div>
   </header>
 
   <% if @apps.any? %>

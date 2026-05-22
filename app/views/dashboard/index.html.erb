@@ -43,7 +43,10 @@
     <article>
       <div class="section-heading">
         <h2>Recent Apps</h2>
-        <%= link_to "New app", new_app_path %>
+        <div class="inline-actions">
+          <%= link_to "First app guide", onboarding_path %>
+          <%= link_to "New app", new_app_path %>
+        </div>
       </div>
       <% if @apps.any? %>
         <ol class="event-list">

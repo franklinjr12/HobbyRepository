@@ -6,6 +6,18 @@ class App < ApplicationRecord
   DEFAULT_DRAIN_TIMEOUT_SECONDS = 30
   DEFAULT_MAX_CONNECTION_DURATION_SECONDS = 1.hour.to_i
   DEFAULT_MEMORY_LIMIT_BYTES = ENV.fetch("PLATFORM_DEFAULT_MEMORY_LIMIT_BYTES", 256.megabytes).to_i
+  SAMPLE_APP_ATTRIBUTES = {
+    name: "Sample Whoami App",
+    image_reference: "traefik/whoami:v1.10",
+    internal_port: 80,
+    idle_timeout_seconds: 300,
+    health_check_kind: "http",
+    health_check_path: "/",
+    volume_enabled: "0",
+    volume_mount_path: Volume::DEFAULT_MOUNT_PATH,
+    database_enabled: "0",
+    database_type: DatabaseResource::DEFAULT_DATABASE_TYPE
+  }.freeze
 
   HEALTH_CHECK_KINDS = %w[http port].freeze
 
