@@ -204,6 +204,11 @@ h1 {
   box-shadow: 0 0 0 4px rgb(32 164 107 / 14%);
 }
 
+.status-dot-warning {
+  background: #d45b5b;
+  box-shadow: 0 0 0 4px rgb(212 91 91 / 14%);
+}
+
 .milestone-panel {
   padding: 24px;
 }

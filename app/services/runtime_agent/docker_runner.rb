@@ -11,6 +11,8 @@ module RuntimeAgent
     def call(command)
       stdout, stderr, status = Open3.capture3(*command)
       CommandResult.new(stdout, stderr, status.exitstatus)
+    rescue Errno::ENOENT => error
+      CommandResult.new("", error.message, 127)
     end
   end
 end

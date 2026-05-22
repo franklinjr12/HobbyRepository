@@ -375,6 +375,52 @@ module RuntimeAgent
       assert_equal "other-123", other_runtime.reload.container_id
     end
 
+    test "lists platform containers with labels for startup reconciliation" do
+      runner = FakeRunner.new([
+        FakeRunner.success(
+          {
+            ID: "container-123",
+            Names: "hobby-agent-app",
+            State: "running",
+            Status: "Up 2 minutes",
+            Labels: "#{LABEL_PLATFORM}=true,#{LABEL_APP_ID}=#{@app.id}"
+          }.to_json + "\n"
+        )
+      ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      result = agent.list_platform_containers
+
+      assert result.success?
+      assert_equal(
+        [ "docker", "ps", "--all", "--filter", "label=hobby.platform=true", "--format", "{{ json . }}" ],
+        runner.commands.first
+      )
+      container = result.payload.fetch(:containers).first
+      assert_equal "container-123", container.fetch(:container_id)
+      assert_equal "running", container.fetch(:state)
+      assert_equal @app.id.to_s, container.fetch(:labels).fetch(LABEL_APP_ID)
+    end
+
+    test "checks whether the Docker runtime is available" do
+      runner = FakeRunner.new([ FakeRunner.success("\"24.0.0\"\n") ])
+      agent = LocalDockerAgent.new(runner: runner)
+
+      assert agent.platform_available?
+      assert_equal %w[docker info --format {{json .ServerVersion}}], runner.commands.first
+    end
+
+    test "reports Docker unavailable when the docker executable is missing" do
+      runner = Class.new do
+        def call(_command)
+          raise Errno::ENOENT, "No such file or directory - docker"
+        end
+      end.new
+      agent = LocalDockerAgent.new(runner: runner)
+
+      assert_not agent.platform_available?
+    end
+
     private
 
     def successful_health_checker

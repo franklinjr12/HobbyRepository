@@ -1,0 +1,65 @@
+<% content_for :title, "Platform Health" %>
+
+<main class="page-shell">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Admin</p>
+      <h1>Platform health</h1>
+    </div>
+    <%= link_to "All apps", admin_apps_path, class: "button secondary" %>
+  </header>
+
+  <section class="dashboard-grid" aria-label="Platform health status">
+    <% @health.each do |name, check| %>
+      <article>
+        <span class="status-dot <%= "status-dot-warning" unless check.fetch(:ok) %>"></span>
+        <h2><%= name.to_s.humanize %></h2>
+        <p><%= check.fetch(:message) %></p>
+      </article>
+    <% end %>
+    <article>
+      <span class="status-dot"></span>
+      <h2>Running apps</h2>
+      <p><%= pluralize(@running_app_count, "app") %> currently running.</p>
+    </article>
+  </section>
+
+  <section class="detail-grid">
+    <article>
+      <h2>Node heartbeat</h2>
+      <% if @nodes.any? %>
+        <dl>
+          <% @nodes.each do |node| %>
+            <dt><%= node.name %></dt>
+            <dd>
+              <%= node.status.humanize %>
+              <% if node.last_heartbeat_at %>
+                · <%= time_ago_in_words(node.last_heartbeat_at) %> ago
+              <% else %>
+                · No heartbeat
+              <% end %>
+            </dd>
+          <% end %>
+        </dl>
+      <% else %>
+        <p>No nodes registered.</p>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Recent failures</h2>
+      <% if @recent_failures.any? %>
+        <ol class="event-list">
+          <% @recent_failures.each do |event| %>
+            <li>
+              <strong><%= event.event_type %></strong>
+              <span><%= event.message %></span>
+            </li>
+          <% end %>
+        </ol>
+      <% else %>
+        <p>No recent runtime or gateway failures.</p>
+      <% end %>
+    </article>
+  </section>
+</main>

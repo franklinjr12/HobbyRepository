@@ -1,5 +1,5 @@
 class RuntimeInstance < ApplicationRecord
-  STATUSES = %w[starting running stopped crashed missing].freeze
+  STATUSES = %w[starting running stopped crashed missing orphaned].freeze
 
   belongs_to :app
   belongs_to :node

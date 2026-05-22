@@ -393,6 +393,31 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "waking", app.status
   end
 
+  test "redeploy shows a normalized alert when Docker is unavailable while stopping old runtime" do
+    app = @user.apps.create!(
+      name: "Docker Missing Redeploy",
+      image_reference: "example/app:v1",
+      internal_port: 3000,
+      status: "running"
+    )
+    app.deployments.create!(image_reference: "example/app:v1", port: 3000, current: true)
+    app.runtime_instances.create!(status: "running", container_id: "old-runtime")
+    error = RuntimeAgent::Error.new("stop_failed", "Container stop failed", [ "docker", "stop" ], 127,
+                                    "No such file or directory - docker", {})
+
+    with_runtime_agent(FakeRuntimeAgent.new(stop_result: RuntimeAgent::Result.failure(error))) do
+      post deploy_app_path(app), params: {
+        deployment: {
+          image_reference: "example/app:v2",
+          start: "1"
+        }
+      }
+    end
+
+    assert_redirected_to app_path(app)
+    assert_equal "Container stop failed", flash[:alert]
+  end
+
   test "rollback marks selected deployment current and records event" do
     app = @user.apps.create!(
       name: "Rollback App",
@@ -501,5 +526,18 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :not_found
     assert_equal "Private Update", app.reload.name
+  end
+
+  test "admin can inspect another user's app" do
+    admin = User.create!(email: "admin@example.com", password: "password123", admin: true)
+    other_user = User.create!(email: "admin-visible@example.com", password: "password123")
+    app = other_user.apps.create!(name: "Admin Visible", slug: "admin-visible")
+
+    delete sign_out_path
+    post sign_in_path, params: { email: admin.email, password: "password123" }
+    get app_path(app)
+
+    assert_response :success
+    assert_select "h1", text: "Admin Visible"
   end
 end

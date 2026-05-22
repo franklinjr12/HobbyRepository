@@ -29,6 +29,10 @@
         <nav aria-label="Main navigation">
           <%= link_to "Dashboard", dashboard_path %>
           <%= link_to "Apps", apps_path %>
+          <% if current_user.admin? %>
+            <%= link_to "Admin", admin_apps_path %>
+            <%= link_to "Health", admin_health_path %>
+          <% end %>
         </nav>
         <%= button_to "Sign out", sign_out_path, method: :delete, class: "link-button" %>
       <% end %>

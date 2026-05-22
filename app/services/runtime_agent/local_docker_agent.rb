@@ -212,6 +212,34 @@ module RuntimeAgent
       Result.success(command: "cleanup_stopped_containers", removed_containers: removed)
     end
 
+    def list_platform_containers
+      command = [
+        "docker", "ps", "--all",
+        "--filter", "label=#{LABEL_PLATFORM}=#{PLATFORM_LABEL_VALUE}",
+        "--format", "{{ json . }}"
+      ]
+      result = run(command)
+      return command_failure(:platform_container_list_failed, "Platform containers could not be listed", command, result) unless result.success?
+
+      containers = result.stdout.lines.filter_map do |line|
+        next if line.blank?
+
+        payload = JSON.parse(line)
+        normalize_container_summary(payload)
+      end
+
+      Result.success(command: "list_platform_containers", containers: containers)
+    rescue JSON::ParserError => error
+      failure(:platform_container_list_parse_failed, "Docker container list returned invalid JSON",
+              details: { error: error.message })
+    end
+
+    def platform_available?
+      run(%w[docker info --format {{json .ServerVersion}}]).success?
+    rescue Errno::ENOENT
+      false
+    end
+
     private
 
     attr_reader :runner, :health_checker
@@ -352,6 +380,28 @@ module RuntimeAgent
         container_id
       ])
       result.success? && result.stdout.strip == PLATFORM_LABEL_VALUE
+    end
+
+    def normalize_container_summary(payload)
+      container_id = payload["ID"] || payload["ID".downcase] || payload["ContainerID"]
+      labels = parse_labels(payload["Labels"])
+
+      {
+        container_id: container_id,
+        names: payload["Names"],
+        state: payload["State"],
+        status: payload["Status"],
+        labels: labels
+      }.compact
+    end
+
+    def parse_labels(value)
+      return value if value.is_a?(Hash)
+
+      value.to_s.split(",").each_with_object({}) do |label, labels|
+        key, label_value = label.split("=", 2)
+        labels[key] = label_value if key.present?
+      end
     end
 
     def wait_for_readiness!(app, deployment, runtime_instance, wake_started_at:, wake_started_monotonic:,

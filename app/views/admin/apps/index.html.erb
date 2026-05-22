@@ -1,0 +1,56 @@
+<% content_for :title, "Admin Apps" %>
+
+<main class="page-shell">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Admin</p>
+      <h1>All apps</h1>
+    </div>
+    <%= link_to "Platform health", admin_health_path, class: "button secondary" %>
+  </header>
+
+  <% if @apps.any? %>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Owner</th>
+          <th>Status</th>
+          <th>Resources</th>
+          <th>Last activity</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @apps.each do |app| %>
+          <% snapshot = app.runtime_metric_snapshots.recent(1).first %>
+          <% last_activity = app.last_request_at || app.last_activity_at || app.updated_at %>
+          <tr>
+            <td><%= link_to app.name, app %></td>
+            <td><%= app.owner&.email || "Unowned" %></td>
+            <td><span class="status-pill status-<%= app.status %>"><%= app.status.humanize %></span></td>
+            <td>
+              <% if snapshot %>
+                <%= number_to_human_size(snapshot.memory_usage_bytes || 0) %>
+                <% if snapshot.cpu_usage_percent.present? %>
+                  · <%= number_to_percentage(snapshot.cpu_usage_percent, precision: 1) %> CPU
+                <% end %>
+              <% else %>
+                <%= number_to_human_size(app.memory_limit_bytes || 0) %> reserved
+              <% end %>
+            </td>
+            <td><%= time_ago_in_words(last_activity) %> ago</td>
+            <td>
+              <div class="inline-actions">
+                <%= link_to "Open", app, class: "button secondary compact" %>
+                <%= button_to "Stop", stop_admin_app_path(app), method: :post, class: "button compact" %>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% else %>
+    <p class="empty-state">No apps have been created yet.</p>
+  <% end %>
+</main>

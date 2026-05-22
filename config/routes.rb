@@ -23,6 +23,13 @@ Rails.application.routes.draw do
     end
   end
 
+  namespace :admin do
+    resources :apps, only: %i[index] do
+      post :stop, on: :member
+    end
+    resource :health, only: %i[show], controller: :health
+  end
+
   namespace :internal do
     scope :gateway, controller: :gateway do
       get :resolve

@@ -128,7 +128,8 @@ class AppsController < ApplicationController
   private
 
   def set_app
-    @app = current_user.apps.find(params.expect(:id))
+    scope = current_user.admin? ? App.all : current_user.apps
+    @app = scope.find(params.expect(:id))
   end
 
   def app_params
