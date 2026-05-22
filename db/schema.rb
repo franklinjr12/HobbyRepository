@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_19_170200) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_22_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -73,6 +73,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_19_170200) do
     t.integer "internal_port"
     t.datetime "last_activity_at"
     t.datetime "last_request_at"
+    t.integer "max_connection_duration_seconds", default: 3600, null: false
     t.bigint "memory_limit_bytes"
     t.string "name", null: false
     t.bigint "node_id", null: false

@@ -208,6 +208,17 @@ class AppTest < ActiveSupport::TestCase
     assert_equal 0, app.active_connection_count
   end
 
+  test "defaults and validates max connection duration policy" do
+    app = App.create!(name: "Socket App", slug: "socket-app", owner: @owner, node: @node)
+
+    assert_equal 3600, app.max_connection_duration_seconds
+
+    app.max_connection_duration_seconds = 30
+
+    assert_not app.valid?
+    assert_includes app.errors[:max_connection_duration_seconds], "must be greater than or equal to 60"
+  end
+
   test "idle sleep is due only for inactive running apps past timeout" do
     app = App.create!(
       name: "Idle App",

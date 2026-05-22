@@ -171,7 +171,8 @@ module Internal
         app_id: app.id,
         app_status: app.status,
         hostname: route.hostname,
-        internal_target: internal_target_payload(runtime_instance)
+        internal_target: internal_target_payload(runtime_instance),
+        websocket: websocket_policy_payload(app)
       }
     end
 
@@ -193,6 +194,7 @@ module Internal
         app_id: app.id,
         app_status: app.status,
         wake_enqueued: wake_was_enqueued,
+        websocket: websocket_policy_payload(app),
         retry_after: retry_after_for(app)
       }.compact
     end
@@ -384,6 +386,12 @@ module Internal
         host: runtime_instance.internal_host,
         port: runtime_instance.internal_port,
         url: "http://#{runtime_instance.internal_host}:#{runtime_instance.internal_port}"
+      }
+    end
+
+    def websocket_policy_payload(app)
+      {
+        max_connection_duration_seconds: app.max_connection_duration_seconds
       }
     end
   end

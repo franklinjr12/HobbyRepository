@@ -127,6 +127,7 @@ module Internal
       body = response.parsed_body
       assert_equal "running", body.fetch("status")
       assert_equal "http://172.18.0.10:3000", body.fetch("internal_target").fetch("url")
+      assert_equal 3600, body.fetch("websocket").fetch("max_connection_duration_seconds")
       assert @managed_app.reload.last_activity_at.present?
       assert @managed_app.last_request_at.present?
     end
