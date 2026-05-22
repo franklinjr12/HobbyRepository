@@ -14,17 +14,22 @@ services:
       DB_PASSWORD: password
       REDIS_URL: redis://redis:6379/1
       PLATFORM_BASE_HOST: localhost
+      PLATFORM_APP_NETWORK: hobby-apps
       PLATFORM_INTERNAL_TOKEN: local-dev-token
     ports:
       - "3000:3000"
     volumes:
       - .:/rails
       - bundle:/usr/local/bundle
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_started
+    networks:
+      - default
+      - app_runtime
     stdin_open: true
     tty: true
 
@@ -55,3 +60,8 @@ volumes:
   bundle:
   postgres-data:
   redis-data:
+
+networks:
+  app_runtime:
+    name: hobby-apps
+    internal: true

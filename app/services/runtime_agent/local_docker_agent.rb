@@ -235,7 +235,7 @@ module RuntimeAgent
     end
 
     def platform_available?
-      run(%w[docker info --format {{json .ServerVersion}}]).success?
+      run([ "docker", "info", "--format", "{{json .ServerVersion}}" ]).success?
     rescue Errno::ENOENT
       false
     end

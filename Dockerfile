@@ -14,9 +14,16 @@ FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
 # Rails app lives here
 WORKDIR /rails
 
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y ca-certificates curl gnupg && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list
+
 # Install base packages
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y curl libjemalloc2 postgresql-client && \
+    apt-get install --no-install-recommends -y curl docker-ce-cli libjemalloc2 postgresql-client && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 

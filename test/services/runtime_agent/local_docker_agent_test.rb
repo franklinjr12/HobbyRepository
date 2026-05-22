@@ -407,7 +407,7 @@ module RuntimeAgent
       agent = LocalDockerAgent.new(runner: runner)
 
       assert agent.platform_available?
-      assert_equal %w[docker info --format {{json .ServerVersion}}], runner.commands.first
+      assert_equal [ "docker", "info", "--format", "{{json .ServerVersion}}" ], runner.commands.first
     end
 
     test "reports Docker unavailable when the docker executable is missing" do

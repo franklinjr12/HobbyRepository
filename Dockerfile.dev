@@ -6,9 +6,17 @@ FROM docker.io/library/ruby:${RUBY_VERSION}-bookworm
 WORKDIR /rails
 
 RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y ca-certificates curl gnupg && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list
+
+RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
       build-essential \
       curl \
+      docker-ce-cli \
       git \
       libpq-dev \
       libyaml-dev \
