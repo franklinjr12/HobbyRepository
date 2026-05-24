@@ -27,11 +27,15 @@ Rails.application.routes.draw do
       post :wake
       post :sleep
       post :deploy
+      post :deploy_git
       post :rollback
       post :inspect_runtime
       post :provision_database
       post :rotate_database_credentials
       post :backup_database
+      post :custom_domains
+      post :verify_domain
+      post :provision_domain_tls
     end
   end
 
@@ -40,6 +44,9 @@ Rails.application.routes.draw do
       post :stop, on: :member
     end
     resources :users, only: %i[index new create]
+    resources :teams, except: %i[show] do
+      resources :team_memberships, only: %i[create update destroy], path: "memberships"
+    end
     resource :health, only: %i[show], controller: :health
   end
 

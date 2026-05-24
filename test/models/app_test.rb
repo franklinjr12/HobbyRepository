@@ -14,6 +14,7 @@ class AppTest < ActiveSupport::TestCase
     assert_equal "tiny-site", app.slug
     assert_equal "created", app.status
     assert_equal 900, app.idle_timeout_seconds
+    assert_equal "deep_sleep", app.sleep_mode
     assert_equal 60, app.startup_timeout_seconds
     assert_equal App::DEFAULT_MEMORY_LIMIT_BYTES, app.memory_limit_bytes
     assert_equal "http", app.health_check_kind
@@ -260,6 +261,33 @@ class AppTest < ActiveSupport::TestCase
 
     assert_not app.idle_sleep_due?
     assert app.idle_timeout_reached?
+  end
+
+  test "always-on apps skip automatic idle sleep" do
+    app = App.create!(
+      name: "Always On",
+      slug: "always-on",
+      owner: @owner,
+      node: @node,
+      status: "sleeping",
+      sleep_mode: "always_on",
+      idle_timeout_seconds: 300,
+      last_request_at: 10.minutes.ago
+    )
+    app.manual_override_to!("running", reason: "test always-on runtime")
+
+    assert_not app.sleeping_enabled?
+    assert_not app.idle_timeout_reached?
+    assert_not app.idle_sleep_due?
+    assert_match "consuming runtime resources", app.sleep_mode_warning
+  end
+
+  test "light sleep mode falls back to deep sleep until runtime support exists" do
+    app = App.create!(name: "Light Sleeper", slug: "light-sleeper", owner: @owner, node: @node, sleep_mode: "light_sleep")
+
+    assert app.sleeping_enabled?
+    assert_equal "deep_sleep", app.effective_sleep_mode
+    assert_match "falls back to deep sleep", app.sleep_mode_warning
   end
 
   test "new request cancels draining sleep decision" do

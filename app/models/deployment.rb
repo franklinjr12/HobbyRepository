@@ -1,5 +1,7 @@
 class Deployment < ApplicationRecord
   STATUSES = %w[created deploying deployed failed retired].freeze
+  SOURCE_TYPES = %w[image git].freeze
+  BUILD_STATUSES = %w[pending running succeeded failed].freeze
   IMAGE_REFERENCE_FORMAT = /\A[a-z0-9]+(?:(?:[._-]|__|[-]*)[a-z0-9]+)*(?::[0-9]+)?(?:\/[a-z0-9]+(?:(?:[._-]|__|[-]*)[a-z0-9]+)*)*(?::[\w][\w.-]{0,127})?(?:@sha256:[a-f0-9]{64})?\z/.freeze
 
   belongs_to :app
@@ -15,6 +17,10 @@ class Deployment < ApplicationRecord
     message: "must be a valid container image reference"
   }, allow_blank: true
   validates :status, inclusion: { in: STATUSES }
+  validates :source_type, inclusion: { in: SOURCE_TYPES }
+  validates :build_status, inclusion: { in: BUILD_STATUSES }, allow_blank: true
+  validates :git_repository_url, presence: true, if: :git_source?
+  validates :git_ref, presence: true, if: :git_source?
   validates :health_check_kind, inclusion: { in: App::HEALTH_CHECK_KINDS }
   validates :health_check_path, presence: true, if: :http_health_check?
   validates :health_check_path, format: { with: %r{\A/[^\r\n]*\z}, message: "must start with /" },
@@ -34,6 +40,10 @@ class Deployment < ApplicationRecord
 
   def log_label
     "Deployment ##{id} - #{image_reference}"
+  end
+
+  def git_source?
+    source_type == "git"
   end
 
   private

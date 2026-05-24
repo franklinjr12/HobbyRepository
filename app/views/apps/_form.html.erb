@@ -25,6 +25,20 @@
     <%= form.text_field :image_reference, placeholder: "ghcr.io/example/app:latest" %>
   </div>
 
+  <% if @assignable_teams&.any? %>
+    <div>
+      <%= form.label :team_id, "Team" %>
+      <%= form.select :team_id,
+                      options_from_collection_for_select(@assignable_teams, :id, :name, app.team_id),
+                      { include_blank: "No team" } %>
+    </div>
+  <% elsif app.team.present? %>
+    <div>
+      <%= form.label :team_id, "Team" %>
+      <p class="muted"><%= app.team.name %></p>
+    </div>
+  <% end %>
+
   <div class="form-row">
     <div>
       <%= form.label :internal_port %>
@@ -34,6 +48,16 @@
     <div>
       <%= form.label :idle_timeout_seconds %>
       <%= form.number_field :idle_timeout_seconds, min: 60 %>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <strong>Sleep policy</strong>
+    <p>Always-on apps keep runtime resources allocated until manually slept. Light sleep is recorded for future runtime support and currently falls back to deep sleep.</p>
+
+    <div>
+      <%= form.label :sleep_mode %>
+      <%= form.select :sleep_mode, App::SLEEP_MODES.map { |mode| [ mode.humanize, mode ] } %>
     </div>
   </div>
 

@@ -112,9 +112,52 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "example/tiny:latest", app.current_deployment.image_reference
     assert_equal "http", app.current_deployment.health_check_kind
     assert_equal "/up", app.current_deployment.health_check_path
+    assert_equal "deep_sleep", app.sleep_mode
     assert_equal "/data", app.volume.mount_path
     assert_equal "pending", app.database_resource.status
     assert_equal %w[volume.created database.created app.created deployment.created], app.app_events.order(:created_at).pluck(:event_type)
+  end
+
+  test "creates app assigned to a manageable team" do
+    team = Team.create!(name: "Builder Team")
+    team.team_memberships.create!(user: @user, role: "developer")
+
+    post apps_path, params: {
+      app: {
+        name: "Team Service",
+        team_id: team.id,
+        image_reference: "example/team:latest",
+        internal_port: 3000,
+        idle_timeout_seconds: 900,
+        health_check_kind: "http",
+        health_check_path: "/"
+      }
+    }
+
+    app = @user.apps.find_by!(slug: "team-service")
+    assert_redirected_to app_path(app)
+    assert_equal team, app.team
+  end
+
+  test "rejects app assignment to an unavailable team" do
+    team = Team.create!(name: "Private Team")
+
+    assert_no_difference -> { App.count } do
+      post apps_path, params: {
+        app: {
+          name: "Unavailable Team Service",
+          team_id: team.id,
+          image_reference: "example/team:latest",
+          internal_port: 3000,
+          idle_timeout_seconds: 900,
+          health_check_kind: "http",
+          health_check_path: "/"
+        }
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_select ".error-panel", text: /Team is not available/
   end
 
   test "new can prefill the sample app configuration" do
@@ -308,6 +351,7 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
           health_check_kind: "port",
           health_check_path: "/ready",
           idle_timeout_seconds: 120,
+          sleep_mode: "always_on",
           startup_timeout_seconds: 30,
           memory_limit_bytes: 268_435_456,
           cpu_limit: 0.5,
@@ -325,10 +369,45 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 4000, app.current_deployment.port
     assert_equal "port", app.current_deployment.health_check_kind
     assert_nil app.current_deployment.health_check_path
+    assert_equal "always_on", app.sleep_mode
     assert_equal "/cache", app.volume.mount_path
     assert_equal "pending", app.database_resource.status
     assert_not original_deployment.reload.current?
     assert_includes app.app_events.order(:created_at).pluck(:event_type), "app.updated"
+  end
+
+  test "settings update can assign and remove a manageable team" do
+    team = Team.create!(name: "Ops Team")
+    team.team_memberships.create!(user: @user, role: "developer")
+    app = @user.apps.create!(name: "Team Editable", image_reference: "example/app:latest", internal_port: 3000)
+
+    patch app_path(app), params: {
+      app: {
+        name: "Team Editable",
+        image_reference: "example/app:latest",
+        internal_port: 3000,
+        health_check_path: "/",
+        idle_timeout_seconds: 900,
+        team_id: team.id
+      }
+    }
+
+    assert_redirected_to app_path(app)
+    assert_equal team, app.reload.team
+
+    patch app_path(app), params: {
+      app: {
+        name: "Team Editable",
+        image_reference: "example/app:latest",
+        internal_port: 3000,
+        health_check_path: "/",
+        idle_timeout_seconds: 900,
+        team_id: ""
+      }
+    }
+
+    assert_redirected_to app_path(app)
+    assert_nil app.reload.team
   end
 
   test "deploy creates current deployment from image and preserves history" do
@@ -372,6 +451,61 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to app_path(app)
     assert_match "Image reference", flash[:alert]
+  end
+
+  test "deploy from git creates a built current deployment" do
+    app = @user.apps.create!(
+      name: "Git Deploy App",
+      image_reference: "example/app:v1",
+      internal_port: 3000,
+      status: "created"
+    )
+    app.deployments.create!(image_reference: "example/app:v1", port: 3000, current: true)
+
+    assert_difference -> { Deployment.count }, 1 do
+      post deploy_git_app_path(app), params: {
+        deployment: {
+          git_repository_url: "https://github.com/example/app.git",
+          git_ref: "main",
+          start: "0"
+        }
+      }
+    end
+
+    deployment = app.reload.current_deployment
+    assert_redirected_to app_path(app)
+    assert_equal "git", deployment.source_type
+    assert_equal "https://github.com/example/app.git", deployment.git_repository_url
+    assert_equal "main", deployment.git_ref
+    assert_equal "succeeded", deployment.build_status
+    assert_match "local-builds/git-deploy-app", deployment.image_reference
+    assert_match "Built container image", deployment.build_logs
+    assert_equal "sleeping", app.status
+  end
+
+  test "failed git build does not replace the current deployment" do
+    app = @user.apps.create!(
+      name: "Bad Git App",
+      image_reference: "example/app:v1",
+      internal_port: 3000,
+      status: "running"
+    )
+    current = app.deployments.create!(image_reference: "example/app:v1", port: 3000, current: true)
+
+    assert_no_difference -> { Deployment.count } do
+      post deploy_git_app_path(app), params: {
+        deployment: {
+          git_repository_url: "not a git url",
+          git_ref: "main",
+          start: "1"
+        }
+      }
+    end
+
+    assert_redirected_to app_path(app)
+    assert_equal current, app.reload.current_deployment
+    assert_equal "running", app.status
+    assert_match "Git repository URL", flash[:alert]
   end
 
   test "redeploy running app stops old runtime and starts new deployment" do
@@ -507,6 +641,32 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "sleep.succeeded", app.app_events.order(:created_at).last.event_type
   end
 
+  test "custom domain can be added verified and provisioned for tls" do
+    app = @user.apps.create!(name: "Domain App", image_reference: "example/app:latest", internal_port: 3000)
+
+    assert_difference -> { Route.count }, 1 do
+      post custom_domains_app_path(app), params: {
+        route: {
+          hostname: "app.example.com"
+        }
+      }
+    end
+
+    route = app.routes.custom_domains.find_by!(hostname: "app.example.com")
+    assert_redirected_to app_path(app)
+    assert_equal "pending", route.ownership_status
+    assert_not route.active?
+
+    post verify_domain_app_path(app), params: { route_id: route.id, ownership_token: route.ownership_token }
+    assert_redirected_to app_path(app)
+    assert_equal "verified", route.reload.ownership_status
+
+    post provision_domain_tls_app_path(app), params: { route_id: route.id }
+    assert_redirected_to app_path(app)
+    assert_equal "active", route.reload.tls_status
+    assert route.active?
+  end
+
   test "manual wake shows normalized runtime failures" do
     app = @user.apps.create!(name: "Broken App", status: "sleeping")
     error = RuntimeAgent::Error.new("start_failed", "Container start failed", [ "docker", "run" ], 1, "boom", {})
@@ -526,6 +686,40 @@ class AppsControllerTest < ActionDispatch::IntegrationTest
     get app_path(app)
 
     assert_response :not_found
+  end
+
+  test "team developer can manage shared apps" do
+    other_user = User.create!(email: "team-owner@example.com", password: "password123")
+    team = Team.create!(name: "Shared Team")
+    team.team_memberships.create!(user: @user, role: "developer")
+    app = other_user.apps.create!(name: "Shared App", slug: "shared-app", team: team)
+
+    patch app_path(app), params: {
+      app: {
+        name: "Shared App Updated",
+        image_reference: "example/shared:latest",
+        internal_port: 3000,
+        health_check_path: "/",
+        idle_timeout_seconds: 900
+      }
+    }
+
+    assert_redirected_to app_path(app)
+    assert_equal "Shared App Updated", app.reload.name
+  end
+
+  test "team viewer can inspect but not manage shared apps" do
+    other_user = User.create!(email: "viewer-owner@example.com", password: "password123")
+    team = Team.create!(name: "Viewer Team")
+    team.team_memberships.create!(user: @user, role: "viewer")
+    app = other_user.apps.create!(name: "Viewer App", slug: "viewer-app", team: team)
+
+    get app_path(app)
+    assert_response :success
+
+    patch app_path(app), params: { app: { name: "Changed" } }
+    assert_response :not_found
+    assert_equal "Viewer App", app.reload.name
   end
 
   test "does not update another user's app" do

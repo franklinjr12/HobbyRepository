@@ -60,6 +60,26 @@ class IdleSleepJobTest < ActiveJob::TestCase
     assert_not_includes app.app_events.pluck(:event_type), "sleep.succeeded"
   end
 
+  test "leaves always-on idle apps running" do
+    app = @owner.apps.create!(
+      name: "Always On Runner",
+      slug: "always-on-runner",
+      node: @node,
+      status: "sleeping",
+      sleep_mode: "always_on",
+      idle_timeout_seconds: 300,
+      last_request_at: 10.minutes.ago
+    )
+    app.manual_override_to!("running", reason: "test always-on idle app")
+
+    with_runtime_agent(FakeRuntimeAgent.new) do
+      IdleSleepJob.perform_now
+    end
+
+    assert_equal "running", app.reload.status
+    assert_not_includes app.app_events.pluck(:event_type), "sleep.succeeded"
+  end
+
   test "marks idle active apps as draining before stopping them" do
     app = @owner.apps.create!(
       name: "Active Idle Runner",

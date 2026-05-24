@@ -34,6 +34,12 @@ if sample_user.new_record? || ENV.key?("SEED_SAMPLE_USER_PASSWORD")
 end
 sample_user.save!
 
+demo_team = Team.find_or_create_by!(slug: "demo-team") do |team|
+  team.name = "Demo Team"
+end
+demo_team.team_memberships.find_or_create_by!(user: admin) { |membership| membership.role = "owner" }
+demo_team.team_memberships.find_or_create_by!(user: sample_user) { |membership| membership.role = "developer" }
+
 def ensure_environment_variable!(app, key:, value:, secret: false)
   variable = app.environment_variables.find_or_initialize_by(key: key)
   variable.assign_attributes(value: value, secret: secret)
@@ -213,9 +219,11 @@ running_app = ensure_demo_app!(
   node: node,
   slug: "warm-whoami-api",
   name: "Warm Whoami API",
+  team: demo_team,
   image_reference: "traefik/whoami:v1.10",
   internal_port: 80,
   health_check_path: "/",
+  sleep_mode: "always_on",
   idle_timeout_seconds: 900,
   startup_timeout_seconds: 30,
   memory_limit_bytes: 67_108_864,
@@ -300,6 +308,18 @@ ensure_event!(
     image_reference: running_deployment.image_reference,
     port: running_deployment.port
   }
+)
+custom_route = running_app.routes.find_or_initialize_by(hostname: "whoami.example.test")
+custom_route.assign_attributes(route_type: "custom_domain", ownership_status: "verified", tls_status: "active", active: true)
+custom_route.ownership_token ||= SecureRandom.hex(16)
+custom_route.ownership_verified_at ||= Time.current
+custom_route.tls_provisioned_at ||= Time.current
+custom_route.save!
+ensure_event!(
+  running_app,
+  event_type: "domain.tls_active",
+  message: "TLS was provisioned for #{custom_route.hostname}",
+  metadata: custom_route.public_status
 )
 
 failed_app = ensure_demo_app!(
@@ -398,6 +418,20 @@ ensure_event!(
   message: "Runtime settings are staged; create or replace the deployment when the image is ready.",
   metadata: { recommended_next_step: "verify image credentials" }
 )
+git_deployment = draft_app.deployments.find_or_initialize_by(
+  source_type: "git",
+  git_repository_url: "https://github.com/example/private-tool.git",
+  git_ref: "main"
+)
+git_deployment.assign_attributes(
+  image_reference: "local-builds/#{draft_app.slug}:seed",
+  port: draft_app.internal_port,
+  health_check_path: draft_app.health_check_path,
+  status: "created",
+  build_status: "succeeded",
+  build_logs: "Resolved https://github.com/example/private-tool.git at main.\nBuilt container image local-builds/#{draft_app.slug}:seed."
+)
+git_deployment.save!
 
 Rails.logger.info(
   "Seeded #{User.count} user, #{App.count} apps, #{Deployment.count} deployments, #{DatabaseResource.count} database resources, #{AppLog.count} app logs, and #{AppEvent.count} app events."

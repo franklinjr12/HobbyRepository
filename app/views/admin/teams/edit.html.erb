@@ -1,0 +1,91 @@
+<% content_for :title, "Edit #{@team.name}" %>
+
+<main class="page-shell">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Admin</p>
+      <h1><%= @team.name %></h1>
+    </div>
+    <div class="inline-actions">
+      <%= link_to "Teams", admin_teams_path, class: "button secondary" %>
+      <%= button_to "Delete team", admin_team_path(@team),
+                    method: :delete,
+                    class: "button secondary",
+                    form: { data: { turbo_confirm: "Delete #{@team.name}?" } } %>
+    </div>
+  </header>
+
+  <section class="detail-grid">
+    <article>
+      <h2>Team Settings</h2>
+      <%= render "form", team: @team %>
+    </article>
+
+    <article>
+      <h2>Add Member</h2>
+      <%= form_with model: [ :admin, @team, TeamMembership.new ], class: "stacked-form" do |form| %>
+        <div>
+          <%= form.label :user_id, "User" %>
+          <%= form.select :user_id, @users.map { |user| [ user.email, user.id ] } %>
+        </div>
+
+        <div>
+          <%= form.label :role %>
+          <%= form.select :role, TeamMembership::ROLES.map { |role| [ role.humanize, role ] } %>
+        </div>
+
+        <%= form.submit "Add member" %>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Members</h2>
+      <% if @memberships.any? %>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Role</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% @memberships.each do |membership| %>
+              <tr>
+                <td><%= membership.user.email %></td>
+                <td>
+                  <%= form_with model: [ :admin, @team, membership ], class: "inline-form" do |form| %>
+                    <%= form.select :role, TeamMembership::ROLES.map { |role| [ role.humanize, role ] } %>
+                    <%= form.submit "Save" %>
+                  <% end %>
+                </td>
+                <td>
+                  <%= button_to "Remove", admin_team_team_membership_path(@team, membership),
+                                method: :delete,
+                                class: "button compact secondary",
+                                form: { data: { turbo_confirm: "Remove #{membership.user.email} from #{@team.name}?" } } %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% else %>
+        <p>No members yet.</p>
+      <% end %>
+    </article>
+
+    <article>
+      <h2>Apps</h2>
+      <% if @team.apps.any? %>
+        <dl>
+          <% @team.apps.order(:name).each do |app| %>
+            <dt><%= app.name %></dt>
+            <dd><%= link_to app.slug, app_path(app) %></dd>
+          <% end %>
+        </dl>
+      <% else %>
+        <p>No apps are assigned to this team.</p>
+      <% end %>
+    </article>
+  </section>
+</main>

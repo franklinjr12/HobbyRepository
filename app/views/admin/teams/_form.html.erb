@@ -1,0 +1,24 @@
+<% if team.errors.any? %>
+  <div class="error-panel">
+    <h2><%= pluralize(team.errors.count, "error") %> prevented this team from being saved</h2>
+    <ul>
+      <% team.errors.full_messages.each do |message| %>
+        <li><%= message %></li>
+      <% end %>
+    </ul>
+  </div>
+<% end %>
+
+<%= form_with model: [ :admin, team ], class: "stacked-form" do |form| %>
+  <div>
+    <%= form.label :name %>
+    <%= form.text_field :name, required: true %>
+  </div>
+
+  <div>
+    <%= form.label :slug %>
+    <%= form.text_field :slug, placeholder: "generated from name" %>
+  </div>
+
+  <%= form.submit team.persisted? ? "Save team" : "Create team" %>
+<% end %>

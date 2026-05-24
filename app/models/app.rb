@@ -6,6 +6,7 @@ class App < ApplicationRecord
   DEFAULT_DRAIN_TIMEOUT_SECONDS = 30
   DEFAULT_MAX_CONNECTION_DURATION_SECONDS = 1.hour.to_i
   DEFAULT_MEMORY_LIMIT_BYTES = ENV.fetch("PLATFORM_DEFAULT_MEMORY_LIMIT_BYTES", 256.megabytes).to_i
+  DEFAULT_SLEEP_MODE = "deep_sleep".freeze
   SAMPLE_APP_ATTRIBUTES = {
     name: "Sample Whoami App",
     image_reference: "traefik/whoami:v1.10",
@@ -20,6 +21,7 @@ class App < ApplicationRecord
   }.freeze
 
   HEALTH_CHECK_KINDS = %w[http port].freeze
+  SLEEP_MODES = %w[deep_sleep light_sleep always_on].freeze
 
   STATUSES = %w[
     created
@@ -62,6 +64,7 @@ class App < ApplicationRecord
   attr_accessor :database_enabled, :database_type
 
   belongs_to :owner, class_name: "User", inverse_of: :apps
+  belongs_to :team, optional: true
   belongs_to :node
   has_many :runtime_instances, dependent: :restrict_with_error
   has_many :deployments, dependent: :restrict_with_error
@@ -94,6 +97,7 @@ class App < ApplicationRecord
                      message: "must use lowercase letters, numbers, and hyphens"
                    }
   validates :status, inclusion: { in: STATUSES }
+  validates :sleep_mode, inclusion: { in: SLEEP_MODES }
   validates :health_check_kind, inclusion: { in: HEALTH_CHECK_KINDS }
   validates :health_check_path, presence: true, if: :http_health_check?
   validates :health_check_path, format: { with: %r{\A/[^\r\n]*\z}, message: "must start with /" },
@@ -291,6 +295,7 @@ class App < ApplicationRecord
   end
 
   def idle_sleep_due?(now: Time.current)
+    return false unless sleeping_enabled?
     return false unless idle_timeout_reached?(now: now)
     return false if active_runtime_activity?
 
@@ -298,6 +303,7 @@ class App < ApplicationRecord
   end
 
   def idle_timeout_reached?(now: Time.current)
+    return false unless sleeping_enabled?
     return false unless status == "running"
 
     last_activity = last_request_at || last_activity_at || updated_at
@@ -344,9 +350,27 @@ class App < ApplicationRecord
     health_check_kind == "port"
   end
 
+  def sleeping_enabled?
+    sleep_mode != "always_on"
+  end
+
+  def effective_sleep_mode
+    sleep_mode == "light_sleep" ? "deep_sleep" : sleep_mode
+  end
+
+  def sleep_mode_warning
+    case sleep_mode
+    when "always_on"
+      "This app will keep consuming runtime resources until manually slept or stopped."
+    when "light_sleep"
+      "Light sleep is tracked for future runtime support and currently falls back to deep sleep."
+    end
+  end
+
   private
 
   def assign_defaults
+    self.sleep_mode = DEFAULT_SLEEP_MODE if sleep_mode.blank?
     self.health_check_kind = DEFAULT_HEALTH_CHECK_KIND if health_check_kind.blank?
     self.health_check_path = DEFAULT_HEALTH_CHECK_PATH if http_health_check? && health_check_path.blank?
     self.health_check_path = nil if port_health_check?

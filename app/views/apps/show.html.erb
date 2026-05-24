@@ -48,6 +48,13 @@
     </article>
   </section>
 
+  <% if @app.sleep_mode_warning.present? %>
+    <section class="warning-panel">
+      <strong><%= @app.sleep_mode.humanize %></strong>
+      <p><%= @app.sleep_mode_warning %> Manual sleep remains available from this page.</p>
+    </section>
+  <% end %>
+
   <section class="detail-grid">
     <article>
       <h2>Configuration</h2>
@@ -58,8 +65,12 @@
         <dd><%= @app.internal_port.presence || "Not configured" %></dd>
         <dt>Health check</dt>
         <dd><%= @app.health_check_kind.humanize %><%= " #{@app.health_check_path}" if @app.health_check_path.present? %></dd>
+        <dt>Team</dt>
+        <dd><%= @app.team&.name || "No team" %></dd>
         <dt>Idle timeout</dt>
         <dd><%= pluralize(@app.idle_timeout_seconds, "second") %></dd>
+        <dt>Sleep mode</dt>
+        <dd><%= @app.sleep_mode.humanize %></dd>
         <dt>Last request</dt>
         <dd><%= @app.last_request_at || "No traffic yet" %></dd>
         <dt>Active requests</dt>
@@ -107,6 +118,25 @@
 
         <%= form.submit @app.current_deployment ? "Redeploy" : "Deploy" %>
       <% end %>
+
+      <%= form_with url: deploy_git_app_path(@app), scope: :deployment, class: "stacked-form deployment-form" do |form| %>
+        <div>
+          <%= form.label :git_repository_url, "Git repository" %>
+          <%= form.text_field :git_repository_url, placeholder: "https://github.com/example/app.git", required: true %>
+        </div>
+
+        <div>
+          <%= form.label :git_ref, "Git ref" %>
+          <%= form.text_field :git_ref, placeholder: "main" %>
+        </div>
+
+        <label class="checkbox-row">
+          <%= form.check_box :start, checked: @app.status == "running" %>
+          Start after deployment
+        </label>
+
+        <%= form.submit "Deploy from Git" %>
+      <% end %>
     </article>
 
     <article>
@@ -122,7 +152,13 @@
                 <% end %>
               </strong>
               <span><%= deployment.image_reference %></span>
+              <% if deployment.git_source? %>
+                <small><%= deployment.git_repository_url %> @ <%= deployment.git_ref %>, build <%= deployment.build_status %></small>
+              <% end %>
               <small><%= deployment.status.humanize %>, port <%= deployment.port %>, <%= deployment.created_at.to_fs(:short) %></small>
+              <% if deployment.build_logs.present? %>
+                <pre class="log-output"><%= deployment.build_logs %></pre>
+              <% end %>
               <% unless deployment.current? %>
                 <%= button_to "Rollback", rollback_app_path(@app),
                               method: :post,
@@ -146,12 +182,38 @@
             <dt><%= route.route_type.humanize %></dt>
             <dd>
               <%= route.hostname %>
-              <span class="muted"><%= route.active? ? "active" : "inactive" %>, TLS <%= route.tls_status.humanize.downcase %></span>
+              <span class="muted"><%= route.active? ? "active" : "inactive" %>, ownership <%= route.ownership_status.humanize.downcase %>, TLS <%= route.tls_status.humanize.downcase %></span>
+              <% if route.custom_domain? %>
+                <small><%= route.dns_instruction %></small>
+                <% unless route.verified? %>
+                  <%= form_with url: verify_domain_app_path(@app), class: "stacked-form compact-form" do |form| %>
+                    <%= hidden_field_tag :route_id, route.id %>
+                    <%= form.label :ownership_token, "Verification token" %>
+                    <%= form.text_field :ownership_token, value: route.ownership_token %>
+                    <%= form.submit "Verify domain" %>
+                  <% end %>
+                <% end %>
+                <% if route.verified? && route.tls_status != "active" %>
+                  <%= button_to "Provision TLS", provision_domain_tls_app_path(@app),
+                                method: :post,
+                                params: { route_id: route.id },
+                                class: "button compact secondary" %>
+                <% end %>
+              <% end %>
             </dd>
           <% end %>
         </dl>
       <% else %>
         <p>No routes have been configured.</p>
+      <% end %>
+
+      <%= form_with url: custom_domains_app_path(@app), scope: :route, class: "stacked-form deployment-form" do |form| %>
+        <div>
+          <%= form.label :hostname, "Custom domain" %>
+          <%= form.text_field :hostname, placeholder: "app.example.com", required: true %>
+        </div>
+
+        <%= form.submit "Add domain" %>
       <% end %>
     </article>
 

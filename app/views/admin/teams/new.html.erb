@@ -1,0 +1,13 @@
+<% content_for :title, "New Team" %>
+
+<main class="page-shell narrow">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Admin</p>
+      <h1>New team</h1>
+    </div>
+    <%= link_to "Teams", admin_teams_path, class: "button secondary" %>
+  </header>
+
+  <%= render "form", team: @team %>
+</main>

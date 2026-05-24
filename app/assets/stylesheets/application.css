@@ -392,6 +392,34 @@ dd {
   align-items: center;
 }
 
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.inline-form select {
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid #b8c3d1;
+  border-radius: 8px;
+  background: #ffffff;
+  font: inherit;
+}
+
+.inline-form input[type="submit"] {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #265a8f;
+  border-radius: 8px;
+  background: #265a8f;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
 .inline-actions .button_to {
   margin: 0;
 }

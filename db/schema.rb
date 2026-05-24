@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_22_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_24_160200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -78,16 +78,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_22_120000) do
     t.string "name", null: false
     t.bigint "node_id", null: false
     t.bigint "owner_id"
+    t.string "sleep_mode", default: "deep_sleep", null: false
     t.string "slug", null: false
     t.integer "startup_timeout_seconds", default: 60, null: false
     t.string "status", default: "created", null: false
+    t.bigint "team_id"
     t.datetime "updated_at", null: false
     t.index ["drain_started_at"], name: "index_apps_on_drain_started_at"
     t.index ["last_request_at"], name: "index_apps_on_last_request_at"
     t.index ["node_id"], name: "index_apps_on_node_id"
     t.index ["owner_id"], name: "index_apps_on_owner_id"
+    t.index ["sleep_mode"], name: "index_apps_on_sleep_mode"
     t.index ["slug"], name: "index_apps_on_slug", unique: true
     t.index ["status"], name: "index_apps_on_status"
+    t.index ["team_id"], name: "index_apps_on_team_id"
   end
 
   create_table "cold_start_metrics", force: :cascade do |t|
@@ -150,18 +154,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_22_120000) do
 
   create_table "deployments", force: :cascade do |t|
     t.bigint "app_id", null: false
+    t.text "build_logs"
+    t.string "build_status"
     t.datetime "created_at", null: false
     t.boolean "current", default: false, null: false
     t.datetime "deployed_at"
     t.jsonb "env_snapshot", default: {}, null: false
+    t.string "git_ref"
+    t.string "git_repository_url"
     t.string "health_check_kind", default: "http", null: false
     t.string "health_check_path", default: "/"
     t.string "image_reference", null: false
     t.integer "port", null: false
+    t.string "source_type", default: "image", null: false
     t.string "status", default: "created", null: false
     t.datetime "updated_at", null: false
     t.index ["app_id", "current"], name: "index_deployments_on_current_app", unique: true, where: "current"
     t.index ["app_id"], name: "index_deployments_on_app_id"
+    t.index ["build_status"], name: "index_deployments_on_build_status"
+    t.index ["source_type"], name: "index_deployments_on_source_type"
     t.index ["status"], name: "index_deployments_on_status"
   end
 
@@ -196,12 +207,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_22_120000) do
     t.bigint "app_id", null: false
     t.datetime "created_at", null: false
     t.string "hostname", null: false
+    t.string "ownership_status", default: "pending", null: false
+    t.string "ownership_token"
+    t.datetime "ownership_verified_at"
     t.string "route_type", default: "generated_subdomain", null: false
+    t.datetime "tls_provisioned_at"
     t.string "tls_status", default: "not_configured", null: false
     t.datetime "updated_at", null: false
     t.index ["active"], name: "index_routes_on_active"
     t.index ["app_id"], name: "index_routes_on_app_id"
     t.index ["hostname"], name: "index_routes_on_hostname", unique: true
+    t.index ["ownership_status"], name: "index_routes_on_ownership_status"
+    t.index ["ownership_token"], name: "index_routes_on_ownership_token", unique: true
     t.index ["route_type"], name: "index_routes_on_route_type"
   end
 
@@ -245,6 +262,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_22_120000) do
     t.index ["runtime_instance_id"], name: "index_runtime_metric_snapshots_on_runtime_instance_id"
   end
 
+  create_table "team_memberships", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "role", default: "viewer", null: false
+    t.bigint "team_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["role"], name: "index_team_memberships_on_role"
+    t.index ["team_id", "user_id"], name: "index_team_memberships_on_team_id_and_user_id", unique: true
+    t.index ["team_id"], name: "index_team_memberships_on_team_id"
+    t.index ["user_id"], name: "index_team_memberships_on_user_id"
+  end
+
+  create_table "teams", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "name", null: false
+    t.string "slug", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_teams_on_slug", unique: true
+  end
+
   create_table "users", force: :cascade do |t|
     t.boolean "admin", default: false, null: false
     t.datetime "created_at", null: false
@@ -274,6 +311,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_22_120000) do
   add_foreign_key "app_logs", "runtime_instances"
   add_foreign_key "app_request_metrics", "apps"
   add_foreign_key "apps", "nodes"
+  add_foreign_key "apps", "teams"
   add_foreign_key "apps", "users", column: "owner_id"
   add_foreign_key "cold_start_metrics", "apps"
   add_foreign_key "cold_start_metrics", "runtime_instances"
@@ -287,5 +325,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_22_120000) do
   add_foreign_key "runtime_instances", "nodes"
   add_foreign_key "runtime_metric_snapshots", "apps"
   add_foreign_key "runtime_metric_snapshots", "runtime_instances"
+  add_foreign_key "team_memberships", "teams"
+  add_foreign_key "team_memberships", "users"
   add_foreign_key "volumes", "apps"
 end
