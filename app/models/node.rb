@@ -1,7 +1,8 @@
 require "socket"
 
 class Node < ApplicationRecord
-  STATUSES = %w[active degraded offline retired].freeze
+  HEARTBEAT_TIMEOUT_SECONDS = ENV.fetch("PLATFORM_NODE_HEARTBEAT_TIMEOUT_SECONDS", 2.minutes).to_i
+  STATUSES = %w[active degraded unhealthy offline retired].freeze
 
   has_many :apps, dependent: :restrict_with_error
   has_many :runtime_instances, dependent: :restrict_with_error
@@ -16,6 +17,11 @@ class Node < ApplicationRecord
 
   scope :local, -> { where(local: true) }
   scope :active, -> { where(status: "active") }
+  scope :heartbeat_stale, ->(timeout: HEARTBEAT_TIMEOUT_SECONDS) {
+    monitored = where.not(status: %w[offline retired])
+    monitored.where(last_heartbeat_at: nil)
+             .or(monitored.where(last_heartbeat_at: ...timeout.seconds.ago))
+  }
 
   def self.ensure_local!
     local.first_or_create!(
@@ -23,6 +29,19 @@ class Node < ApplicationRecord
       hostname: ENV.fetch("PLATFORM_NODE_HOSTNAME", Socket.gethostname),
       status: "active",
       last_heartbeat_at: Time.current
+    )
+  end
+
+  def self.mark_stale_unhealthy!(timeout: HEARTBEAT_TIMEOUT_SECONDS)
+    heartbeat_stale(timeout: timeout).find_each { |node| node.update!(status: "unhealthy") }
+  end
+
+  def heartbeat!(status: "active", capacity_cpu: nil, capacity_memory_bytes: nil, at: Time.current)
+    update!(
+      status: status,
+      capacity_cpu: capacity_cpu.presence || self.capacity_cpu,
+      capacity_memory_bytes: capacity_memory_bytes.presence || self.capacity_memory_bytes,
+      last_heartbeat_at: at
     )
   end
 end

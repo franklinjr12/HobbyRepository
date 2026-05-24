@@ -15,12 +15,14 @@ module RuntimeAgent
     def start_app(app)
       deployment = app.current_deployment
       return failure(:missing_deployment, "App has no current deployment") unless deployment
-      capacity = RuntimeCapacityGuard.new(node: app.node).check(app)
+
+      placement = AppScheduler.new.place(app, reason: "runtime_start")
+      capacity = RuntimeCapacityGuard.new(node: placement.node).check(app)
       return capacity_failure(app, capacity) unless capacity.success?
 
       wake_started_at = Time.current
       wake_started_monotonic = monotonic_time
-      runtime_instance = app.runtime_instances.create!(status: "starting")
+      runtime_instance = app.runtime_instances.create!(status: "starting", node: placement.node)
       app.record_runtime_environment_prepared!
       app.manual_override_to!("waking", reason: "runtime agent start")
 

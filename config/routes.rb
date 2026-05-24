@@ -44,6 +44,8 @@ Rails.application.routes.draw do
   end
 
   namespace :internal do
+    post "nodes/heartbeat", to: "node_heartbeats#create"
+
     scope :gateway, controller: :gateway do
       get :resolve
       post :wake

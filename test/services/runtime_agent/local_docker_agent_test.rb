@@ -84,6 +84,7 @@ module RuntimeAgent
 
       assert_equal "running", @app.reload.status
       assert_equal "running", runtime_instance.status
+      assert_equal @node, runtime_instance.node
       assert_equal "container-123", runtime_instance.container_id
       assert_equal "172.17.0.2", runtime_instance.internal_host
       assert_equal 3000, runtime_instance.internal_port
@@ -117,6 +118,7 @@ module RuntimeAgent
       assert_includes run_command, "--cpus=0.5"
       assert_includes run_command, "#{LABEL_APP_ID}=#{@app.id}"
       assert_includes @app.app_events.pluck(:event_type), "runtime.start_succeeded"
+      assert_includes @app.app_events.pluck(:event_type), "scheduler.placement_selected"
       assert_includes @app.app_events.pluck(:event_type), "volume.mounted"
       assert_includes @app.app_events.pluck(:event_type), "health_check.started"
       assert_includes @app.app_events.pluck(:event_type), "health_check.succeeded"
