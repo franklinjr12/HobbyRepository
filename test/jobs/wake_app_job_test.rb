@@ -4,14 +4,16 @@ class WakeAppJobTest < ActiveJob::TestCase
   class FakeRuntimeAgent
     attr_reader :started_app_ids
 
-    def initialize
+    def initialize(result: RuntimeAgent::Result.success(command: "start_app"))
+      @result = result
       @started_app_ids = []
     end
 
     def start_app(app)
       @started_app_ids << app.id
-      app.manual_override_to!("running", reason: "test wake completed")
-      RuntimeAgent::Result.success(command: "start_app")
+      app.manual_override_to!("running", reason: "test wake completed") if @result.success?
+      app.manual_override_to!("wake_failed", reason: "test wake failed") unless @result.success?
+      @result
     end
   end
 
@@ -32,6 +34,21 @@ class WakeAppJobTest < ActiveJob::TestCase
 
     assert_equal [ @app.id ], agent.started_app_ids
     assert_equal "running", @app.reload.status
+  end
+
+  test "records failed wake attempts through the runtime agent" do
+    agent = FakeRuntimeAgent.new(
+      result: RuntimeAgent::Result.failure(
+        RuntimeAgent::Error.new("start_failed", "Container start failed", nil, nil, nil, {})
+      )
+    )
+
+    with_runtime_agent(agent) do
+      WakeAppJob.perform_now(@app.id)
+    end
+
+    assert_equal [ @app.id ], agent.started_app_ids
+    assert_equal "wake_failed", @app.reload.status
   end
 
   private

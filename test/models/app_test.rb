@@ -99,6 +99,29 @@ class AppTest < ActiveSupport::TestCase
     assert_includes app.errors[:owner], "must exist"
   end
 
+  test "requires unique slugs" do
+    App.create!(name: "First App", slug: "shared-slug", owner: @owner, node: @node)
+    duplicate = App.new(name: "Second App", slug: "shared-slug", owner: @owner, node: @node)
+
+    assert_not duplicate.valid?
+    assert_includes duplicate.errors[:slug], "has already been taken"
+  end
+
+  test "validates internal port range" do
+    app = App.new(name: "Bad Port", slug: "bad-port", owner: @owner, node: @node, internal_port: 65_536)
+
+    assert_not app.valid?
+    assert_includes app.errors[:internal_port], "must be less than 65536"
+  end
+
+  test "validates idle timeout minimum" do
+    app = App.new(name: "Impatient App", slug: "impatient-app", owner: @owner, node: @node,
+                  idle_timeout_seconds: 30)
+
+    assert_not app.valid?
+    assert_includes app.errors[:idle_timeout_seconds], "must be greater than or equal to 60"
+  end
+
   test "returns current deployment" do
     app = App.create!(name: "Deployable", slug: "deployable", owner: @owner, node: @node)
     old_deployment = app.deployments.create!(image_reference: "example/old:1", port: 3000)

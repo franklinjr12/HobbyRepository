@@ -19,7 +19,14 @@ class AppSleeper
     end
 
     result = runtime_agent.stop_app(app)
-    return result unless result.success?
+    unless result.success?
+      app.record_event!(
+        "sleep.failed",
+        "Sleep failed for #{app.name}",
+        metadata: { error: result.error.to_h }
+      )
+      return result
+    end
 
     app.with_lock do
       app.reload

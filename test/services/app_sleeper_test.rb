@@ -11,7 +11,7 @@ class AppSleeperTest < ActiveSupport::TestCase
 
     def stop_app(app)
       stopped_apps << app
-      app.manual_override_to!("stopped", reason: "test stop")
+      app.manual_override_to!("stopped", reason: "test stop") if @result.success?
       @result
     end
   end
@@ -53,5 +53,26 @@ class AppSleeperTest < ActiveSupport::TestCase
     assert_equal "active_requests", result.error.code
     assert_empty agent.stopped_apps
     assert_equal "running", @app.reload.status
+  end
+
+  test "records stop failures so sleep failure is visible" do
+    agent = FakeRuntimeAgent.new(
+      result: RuntimeAgent::Result.failure(
+        RuntimeAgent::Error.new("stop_failed", "Container stop failed", %w[docker stop], 1, "timeout", {})
+      )
+    )
+
+    result = AppSleeper.new(runtime_agent: agent).sleep(
+      @app,
+      requested_by: "platform",
+      trigger: "idle_timeout"
+    )
+
+    assert_not result.success?
+    assert_equal "stop_failed", result.error.code
+    assert_equal "draining", @app.reload.status
+    failure_event = @app.app_events.order(:created_at).last
+    assert_equal "sleep.failed", failure_event.event_type
+    assert_equal "stop_failed", failure_event.metadata.fetch("error").fetch("code")
   end
 end
